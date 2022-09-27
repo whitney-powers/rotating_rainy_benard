@@ -1,2 +1,2 @@
-# Rainy-Benard Aggregation
-A project to study the Rainy-Benard model from Vallis, G. K., Parker, D, J. and Tobias, S. M. 2018. with rotation
+# Rotating Rainy-Benard
+A project to study the effects of rotation on the Rainy-Benard model from Vallis, G. K., Parker, D, J. and Tobias, S. M. 2018.

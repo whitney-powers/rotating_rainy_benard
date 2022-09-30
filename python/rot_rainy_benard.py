@@ -12,7 +12,7 @@ Default paramters from Vallis, Parker, and Tobias (2018)
 http://empslocal.ex.ac.uk/people/staff/gv219/papers/VPT_convection18.pdf
 
 Usage:
-    rot_rainy_benard.py [--beta=<beta> --Rayleigh=<Rayleigh> --Prandtl=<Prandtl> --Prandtlm=<Prandtlm>  --Taylor=<Taylor> --theta=<theta> --F=<F> --alpha=<alpha> --gamma=<gamma> --DeltaT=<DeltaT> --sigma2=<sigma2> --q0=<q0> --nx=<nx> --ny=<ny> --nz=<nz> --Lx=<Lx> --Ly=<Ly> --Lz=<Lz> --restart=<restart_file> --filter=<filter> --mesh=<mesh> --nondim=<nondim> --wall_time=<wall_time>] 
+    rot_rainy_benard.py [--beta=<beta> --Rayleigh=<Rayleigh> --Prandtl=<Prandtl> --Prandtlm=<Prandtlm>  --Taylor=<Taylor> --theta=<theta> --F=<F> --alpha=<alpha> --gamma=<gamma> --DeltaT=<DeltaT> --sigma2=<sigma2> --q0=<q0> --nx=<nx> --ny=<ny> --nz=<nz> --Lx=<Lx> --Ly=<Ly> --Lz=<Lz> --restart=<restart_file> --filter=<filter> --mesh=<mesh> --nondim=<nondim> --wall_time=<wall_time> --label=<label>] 
 
 Options:
     --Rayleigh=<Rayleigh>    Rayleigh number [default: 1e6]
@@ -38,6 +38,7 @@ Options:
     --Taylor=<Taylor>        Taylor number [default: 1e2]
     --theta=<theta>          angle between gravity and rotation vectors [default: 0]
     --wall_time=<wall_time>  wall time (in hours) [default: 23.5]
+    --label=<label>          optional output directrory label [default: None]
 """
 from docopt import docopt
 import os
@@ -107,7 +108,7 @@ if nondim == 'RB':
     omega_yval = omegaval * np.sin(theta)
     omega_zval = omegaval * np.cos(theta)
     
-    slices_dt = 0.01
+    slices_dt = 0.005
     snap_dt = 1.0
     prof_dt = 0.01
     ts_dt = 0.001
@@ -126,7 +127,7 @@ elif nondim == 'buoyancy':                                           #  Buoyancy
     omega_zval = omegaval * np.cos(theta)
     
     
-    slices_dt = 0.01*(Rayleigh* Prandtl)**(1/2)
+    slices_dt = 0.005*(Rayleigh* Prandtl)**(1/2)
     snap_dt = 1.0*(Rayleigh* Prandtl)**(1/2)
     prof_dt = 0.01*(Rayleigh* Prandtl)**(1/2)
     ts_dt = 0.001*(Rayleigh* Prandtl)**(1/2)
@@ -157,6 +158,9 @@ logger.info(Rayleigh, betaval, Prandtl, Prandtlm, Taylor, theta, Fval, alphaval,
 data_dir = "scratch/" + sys.argv[0].split('.py')[0]
 data_dir +="_Ra{:.2e}_Ta{:.2e}_theta{:.2f}".format(Rayleigh, Taylor, theta)
 #data_dir +="_Ra{0:5.02e}_beta{1:5.02e}_Pr{2:5.02e}_Prm{3:5.02e}_Ta{0:5.02e}_theta{4:5.02e}_F{4:5.02e}_alpha{5:5.02e}_gamma{6:5.02e}_DeltaT{7:5.02e}_sigma2{8:5.02e}_q0{9:5.02e}_nondim:{10:s}_nx{11:d}_ny{12:d}_nz{13:d}_Lx{14:5.02e}_Ly{15:5.02e}_Lz{16:5.02e}".format(Rayleigh, betaval, Prandtl, Prandtlm, Taylor, theta, Fval, alphaval, gammaval, DeltaTval, sigma2, q0_amplitude, nondim, nx, ny, nz, Lx, Ly, Lz)
+if args['--label'] is not None:
+    data_dir += "_{}".format(args['--label'])
+data_dir += '/'
 logger.info("saving run in: {}".format(data_dir))
 
 if domain.distributor.rank == 0:

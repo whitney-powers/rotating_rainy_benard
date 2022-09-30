@@ -12,7 +12,7 @@ Default paramters from Vallis, Parker, and Tobias (2018)
 http://empslocal.ex.ac.uk/people/staff/gv219/papers/VPT_convection18.pdf
 
 Usage:
-    rot_rainy_benard.py [--beta=<beta> --Rayleigh=<Rayleigh> --Prandtl=<Prandtl> --Prandtlm=<Prandtlm>  --Taylor=<Taylor> --theta=<theta> --F=<F> --alpha=<alpha> --gamma=<gamma> --DeltaT=<DeltaT> --sigma2=<sigma2> --q0=<q0> --nx=<nx> --ny=<ny> --nz=<nz> --Lx=<Lx> --Ly=<Ly> --Lz=<Lz> --restart=<restart_file> --filter=<filter> --mesh=<mesh> --nondim=<nondim>] 
+    rot_rainy_benard.py [--beta=<beta> --Rayleigh=<Rayleigh> --Prandtl=<Prandtl> --Prandtlm=<Prandtlm>  --Taylor=<Taylor> --theta=<theta> --F=<F> --alpha=<alpha> --gamma=<gamma> --DeltaT=<DeltaT> --sigma2=<sigma2> --q0=<q0> --nx=<nx> --ny=<ny> --nz=<nz> --Lx=<Lx> --Ly=<Ly> --Lz=<Lz> --restart=<restart_file> --filter=<filter> --mesh=<mesh> --nondim=<nondim> --wall_time=<wall_time>] 
 
 Options:
     --Rayleigh=<Rayleigh>    Rayleigh number [default: 1e6]
@@ -37,6 +37,7 @@ Options:
     --mesh=<mesh>            processor mesh (you're in charge of making this consistent with nproc) [default: None]
     --Taylor=<Taylor>        Taylor number [default: 1e2]
     --theta=<theta>          angle between gravity and rotation vectors [default: 0]
+    --wall_time=<wall_time>  wall time (in hours) [default: 23.5]
 """
 from docopt import docopt
 import os
@@ -60,6 +61,7 @@ nx = int(args['--nx'])
 ny = int(args['--ny'])
 nz = int(args['--nz'])
 mesh = args['--mesh']
+wall_time = float(args['--wall_time'])
 if mesh == 'None':
     mesh = None
 else:
@@ -131,7 +133,7 @@ elif nondim == 'buoyancy':                                           #  Buoyancy
 else:
     raise ValueError("Nondimensionalization {} not supported.".format(nondim))
 logger.info("Output timescales (in sim time): slices = {}, snapshots = {}, profiles ={}, timeseries = {}".format(slices_dt, snap_dt, prof_dt, ts_dt))
-
+logger.info("Rotation rate (in 1/sim time), and angle of rotation: omega={}, theta={}".format(omegaval, theta))
 # Create bases and domain
 bases = []
 x_basis = de.Fourier('x', nx, interval=(0, Lx), dealias=3/2)
@@ -289,8 +291,10 @@ q.differentiate('z', out=qz)
 
 # Integration parameters
 dt = 1e-4
-solver.stop_sim_time = 2000
-solver.stop_wall_time = 3600. * 24. * 4.9
+
+#solver.stop_sim_time = 2000
+solver.stop_sim_time = np.inf
+solver.stop_wall_time = wall_time * 3600.
 solver.stop_iteration = np.inf
 
 hermitian_cadence = 10
@@ -318,6 +322,24 @@ if threeD:
     slices.add_task('interp(q, z = 0.5)', name='q midplane')
     slices.add_task('interp(rh, z = 0.5)', name='rh midplane')
 
+    slices.add_task('interp(b, z = 0.8)', name='b z.8')
+    slices.add_task('interp(u, z = 0.8)', name='u z.8')
+    slices.add_task('interp(v, z = 0.8)', name='v z.8')
+    slices.add_task('interp(w, z = 0.8)', name='w z.8')
+    slices.add_task('interp(temp, z = 0.8)', name='temp z.8')
+    slices.add_task('interp(q, z = 0.8)', name='q z.8')
+    slices.add_task('interp(rh, z = 0.8)', name='rh z.8')
+
+    slices.add_task('interp(b, z = 0.9)', name='b z.9')
+    slices.add_task('interp(u, z = 0.9)', name='u z.9')
+    slices.add_task('interp(v, z = 0.9)', name='v z.9')
+    slices.add_task('interp(w, z = 0.9)', name='w z.9')
+    slices.add_task('interp(temp, z = 0.9)', name='temp z.9')
+    slices.add_task('interp(q, z = 0.9)', name='q z.9')
+    slices.add_task('interp(rh, z = 0.9)', name='rh z.9')
+
+    
+    
     slices.add_task('interp(b, x = 0)', name='b vertical')
     slices.add_task('interp(u, x = 0)', name='u vertical')
     slices.add_task('interp(v, x = 0)', name='v vertical')

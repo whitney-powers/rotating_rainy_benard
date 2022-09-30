@@ -175,7 +175,7 @@ problem.parameters['DeltaT'] = DeltaTval
 problem.parameters['omega_x'] = omega_xval
 problem.parameters['omega_y'] = omega_yval
 problem.parameters['omega_z'] = omega_zval
-
+problem.parameters['omega'] = omegaval
 
 
 # numerics parameters
@@ -198,10 +198,20 @@ if threeD:
     problem.substitutions['Coriolis_x'] = '(2*omega_y*w - 2*omega_z*v)'
     problem.substitutions['Coriolis_y'] = '(2*omega_z*u - 2*omega_x*w)'
     problem.substitutions['Coriolis_z'] = '(2*omega_x*v - 2*omega_y*u)'
-    
+
+problem.substitutions['vorticity_y'] = '( uz  - dx(w))'        
+if threeD:
+    problem.substitutions['vorticity_x'] = '(dy(w) - vz)'        
+    problem.substitutions['vorticity_z'] = '(dx(v) - dy(u))'
+    problem.substitutions['enstrophy']   = '(vorticity_x**2 + vorticity_y**2 + vorticity_z**2)'
+    problem.substitutions['Rossby'] = '(sqrt(enstrophy)/(2*omega))'
+
+
+
 problem.substitutions['H(A)'] = '0.5*(1. + tanh(k*A))'
 problem.substitutions['qs'] = 'exp(alpha*temp)'
 problem.substitutions['rh'] = 'q/exp(alpha*temp)'
+
 
 if threeD:
     problem.add_equation('dx(u) + dy(v) + wz = 0')
@@ -321,6 +331,9 @@ if threeD:
     slices.add_task('interp(temp, z = 0.5)', name='temp midplane')
     slices.add_task('interp(q, z = 0.5)', name='q midplane')
     slices.add_task('interp(rh, z = 0.5)', name='rh midplane')
+    slices.add_task('interp(vorticity_x, z=0.5)', name='x vorticity midplane')
+    slices.add_task('interp(vorticity_y, z=0.5)', name='y vorticity midplane')
+    slices.add_task('interp(vorticity_z, z=0.5)', name='z vorticity midplane')
 
     slices.add_task('interp(b, z = 0.8)', name='b z.8')
     slices.add_task('interp(u, z = 0.8)', name='u z.8')
@@ -329,7 +342,11 @@ if threeD:
     slices.add_task('interp(temp, z = 0.8)', name='temp z.8')
     slices.add_task('interp(q, z = 0.8)', name='q z.8')
     slices.add_task('interp(rh, z = 0.8)', name='rh z.8')
+    slices.add_task('interp(vorticity_x, z=0.8)', name='x vorticity z.8')
+    slices.add_task('interp(vorticity_y, z=0.8)', name='y vorticity z.8')
+    slices.add_task('interp(vorticity_z, z=0.8)', name='z vorticity z.8')
 
+    
     slices.add_task('interp(b, z = 0.9)', name='b z.9')
     slices.add_task('interp(u, z = 0.9)', name='u z.9')
     slices.add_task('interp(v, z = 0.9)', name='v z.9')
@@ -337,6 +354,9 @@ if threeD:
     slices.add_task('interp(temp, z = 0.9)', name='temp z.9')
     slices.add_task('interp(q, z = 0.9)', name='q z.9')
     slices.add_task('interp(rh, z = 0.9)', name='rh z.9')
+    slices.add_task('interp(vorticity_x, z=0.9)', name='x vorticity z.9')
+    slices.add_task('interp(vorticity_y, z=0.9)', name='y vorticity z.9')
+    slices.add_task('interp(vorticity_z, z=0.9)', name='z vorticity z.9')
 
     
     
@@ -347,6 +367,10 @@ if threeD:
     slices.add_task('interp(temp, x = 0)', name='temp vertical')
     slices.add_task('interp(q, x = 0)', name='q vertical')
     slices.add_task('interp(rh, x = 0)', name='rh vertical')
+    slices.add_task('interp(vorticity_x, x=0)', name='x vorticity vertical')
+    slices.add_task('interp(vorticity_y, x=0)', name='y vorticity vertical')
+    slices.add_task('interp(vorticity_z, x=0)', name='z vorticity vertical')
+
 else:
     slices.add_task('b', name='b vertical')
     slices.add_task('u', name='u vertical')
@@ -371,6 +395,7 @@ profiles.add_task('plane_avg(temp)', name='temp')
 analysis_tasks.append(profiles)
 timeseries = solver.evaluator.add_file_handler(os.path.join(data_dir, 'timeseries'), sim_dt=ts_dt)
 timeseries.add_task('vol_avg(KE)', name='KE')
+timeseries.add_task('vol_avg(Rossby)', name='Rossby')
 analysis_tasks.append(timeseries)
 # Main loop
 dt = CFL.compute_dt()

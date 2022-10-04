@@ -12,7 +12,7 @@ Default paramters from Vallis, Parker, and Tobias (2018)
 http://empslocal.ex.ac.uk/people/staff/gv219/papers/VPT_convection18.pdf
 
 Usage:
-    moistrb.py [--beta=<beta> --Rayleigh=<Rayleigh> --Prandtl=<Prandtl> --Prandtlm=<Prandtlm>  --Taylor=<Taylor> --F=<F> --alpha=<alpha> --gamma=<gamma> --DeltaT=<DeltaT> --sigma2=<sigma2> --q0=<q0> --nx=<nx> --ny=<ny> --nz=<nz> --Lx=<Lx> --Ly=<Ly> --Lz=<Lz> --restart=<restart_file> --filter=<filter> --mesh=<mesh> --nondim=<nondim>] 
+    rot_rainy_benard.py [--beta=<beta> --Rayleigh=<Rayleigh> --Prandtl=<Prandtl> --Prandtlm=<Prandtlm>  --Taylor=<Taylor> --theta=<theta> --F=<F> --alpha=<alpha> --gamma=<gamma> --DeltaT=<DeltaT> --sigma2=<sigma2> --q0=<q0> --nx=<nx> --ny=<ny> --nz=<nz> --Lx=<Lx> --Ly=<Ly> --Lz=<Lz> --restart=<restart_file> --filter=<filter> --mesh=<mesh> --nondim=<nondim>] 
 
 Options:
     --Rayleigh=<Rayleigh>    Rayleigh number [default: 1e6]
@@ -104,11 +104,12 @@ if nondim == 'RB':
     omega_xval = 0
     omega_yval = omegaval * np.sin(theta)
     omega_zval = omegaval * np.cos(theta)
-    
-    slices_dt = 0.025*t_therm
-    snap_dt = 1.0*t_therm
-    prof_dt = 0.01*t_therm
-    ts_dt = 0.001*t_therm
+
+    slices_dt = 0.01
+    snap_dt = 1.0
+    prof_dt = 0.01
+    ts_dt = 0.001
+
 elif nondim == 'buoyancy':                                           #  Buoyancy scaling
     Pval = (Rayleigh * Prandtl)**(-1/2)         #  diffusion on buoyancy
     Sval = (Rayleigh * Prandtlm)**(-1/2)        #  diffusion on moisture
@@ -124,7 +125,7 @@ elif nondim == 'buoyancy':                                           #  Buoyancy
     omega_zval = omegaval * np.cos(theta)
     
     
-    slices_dt = 0.025*(Rayleigh* Prandtl)**(1/2)
+    slices_dt = 0.01*(Rayleigh* Prandtl)**(1/2)
     snap_dt = 1.0*(Rayleigh* Prandtl)**(1/2)
     prof_dt = 0.01*(Rayleigh* Prandtl)**(1/2)
     ts_dt = 0.001*(Rayleigh* Prandtl)**(1/2)
@@ -151,8 +152,10 @@ problem = de.IVP(domain,
                  variables=variables)
 
 # save data in directory named after script
+logger.info(Rayleigh, betaval, Prandtl, Prandtlm, Taylor, theta, Fval, alphaval, gammaval, DeltaTval, sigma2, q0_amplitude, nondim, nx, ny, nz, Lx, Ly, Lz)
 data_dir = "scratch/" + sys.argv[0].split('.py')[0]
-data_dir +="_Ra{0:5.02e}_beta{1:5.02e}_Pr{2:5.02e}_Prm{3:5.02e}_F{4:5.02e}_alpha{5:5.02e}_gamma{6:5.02e}_DeltaT{7:5.02e}_sigma2{8:5.02e}_q0{9:5.02e}_nondim:{10:s}_nx{11:d}_ny{12:d}_nz{13:d}_Lx{14:5.02e}_Ly{15:5.02e}_Lz{16:5.02e}".format(Rayleigh, betaval, Prandtl, Prandtlm, Fval, alphaval, gammaval, DeltaTval, sigma2, q0_amplitude, nondim, nx, ny, nz, Lx, Ly, Lz)
+data_dir +="_Ra{:.2e}_Ta{:.2e}_theta{:.2f}".format(Rayleigh, Taylor, theta)
+#data_dir +="_Ra{0:5.02e}_beta{1:5.02e}_Pr{2:5.02e}_Prm{3:5.02e}_Ta{0:5.02e}_theta{4:5.02e}_F{4:5.02e}_alpha{5:5.02e}_gamma{6:5.02e}_DeltaT{7:5.02e}_sigma2{8:5.02e}_q0{9:5.02e}_nondim:{10:s}_nx{11:d}_ny{12:d}_nz{13:d}_Lx{14:5.02e}_Ly{15:5.02e}_Lz{16:5.02e}".format(Rayleigh, betaval, Prandtl, Prandtlm, Taylor, theta, Fval, alphaval, gammaval, DeltaTval, sigma2, q0_amplitude, nondim, nx, ny, nz, Lx, Ly, Lz)
 logger.info("saving run in: {}".format(data_dir))
 
 if domain.distributor.rank == 0:

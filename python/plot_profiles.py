@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 from docopt import docopt
 from dedalus.extras import plot_tools
-plt.style.use('prl')
+#plt.style.use('prl')
 
 # parse arguments
 args = docopt(__doc__)
@@ -46,7 +46,7 @@ with h5py.File(filename, 'r') as df:
         plot_tools.plot_bot(dset, image_axes, data_slices, axes=axes, title=task, even_scale=even_scale[n])
     
 for f in filename.parts:
-    if f.startswith('rainy_benard'):
+    if f.startswith('rainy_benard') or f.startswith('rot_rainy_benard'):
         plot_base = f
 plot_file_name = Path(plot_base + '_profiles.png')
 

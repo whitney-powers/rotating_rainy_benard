@@ -20,7 +20,7 @@ Options:
     --Prandtlm=<Prandtlm>    moist Prandtl number [default: 1]
     --F=<F>                  basic state buoyancy difference [default: 0]
     --alpha=<alpha>          Clausius Clapeyron parameter [default: 3.0]
-    --beta=<beta>            beta parameter [default: 1.201]
+    --beta=<beta>            beta parameter [default: 1.20]
     --gamma=<gamma>          condensational heating parameter [default: 0.19]
     --DeltaT=<DeltaT>        Temperature at top [default: -1.0]
     --sigma2=<sigma2>        Initial condition sigma2 [default: 0.05]
@@ -99,26 +99,27 @@ if nondim == 'RB':
     Sval = 1                      #  diffusion on moisture  k_q / k_b
     PdRval = Prandtl              #  diffusion on momentum
     PtRval = Prandtl * Rayleigh   #  Prandtl times Rayleigh = buoyancy force
-    Rey = Rayleigh**(0.5)         #  scaling for timestep
-    tauval   = 0.125*3./Rey       #  condensation time scale
+    t_therm = 1/Pval              #  thermal diffusion timescale, always = 1 in this scaling
+    tauval   = 5e-5/t_therm     #  condensation time scale
 
     # Rotation Stuff
     omegaval = 1/2*Taylor**(1/2)*PdRval
     omega_xval = 0
     omega_yval = omegaval * np.sin(theta)
     omega_zval = omegaval * np.cos(theta)
-    
-    slices_dt = 0.005
+
+    slices_dt = 0.01
     snap_dt = 1.0
     prof_dt = 0.01
     ts_dt = 0.001
+
 elif nondim == 'buoyancy':                                           #  Buoyancy scaling
     Pval = (Rayleigh * Prandtl)**(-1/2)         #  diffusion on buoyancy
     Sval = (Rayleigh * Prandtlm)**(-1/2)        #  diffusion on moisture
     PdRval = (Prandtl / Rayleigh)**(1/2)        #  diffusion on momentum
     PtRval = 1                                  #  buoyancy force  = 1 always
-    Rey = 1                                     #  scaling for timestep
-    tauval   = 0.125*3./Rey                     #  condensation timescale
+    t_therm = 1/Pval                            #  thermal diffusion timescale
+    tauval   = 5e-5/t_therm                     #  condensation timescale
 
     #Rotation stuff
     omegaval = 1/2*Taylor**(1/2)*PdRval
@@ -171,7 +172,7 @@ problem.parameters['P'] = Pval
 problem.parameters['PdR'] = PdRval
 problem.parameters['PtR'] = PtRval
 problem.parameters['gamma'] = gammaval
-problem.parameters['S'] = 1.0
+problem.parameters['S'] = Sval
 problem.parameters['beta'] = betaval
 problem.parameters['tau'] = tauval
 problem.parameters['alpha'] = alphaval

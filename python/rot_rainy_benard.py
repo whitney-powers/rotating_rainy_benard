@@ -100,8 +100,9 @@ if nondim == 'RB':
     PdRval = Prandtl              #  diffusion on momentum
     PtRval = Prandtl * Rayleigh   #  Prandtl times Rayleigh = buoyancy force
     t_therm = 1/Pval              #  thermal diffusion timescale, always = 1 in this scaling
-    tauval   = 5e-5/t_therm     #  condensation time scale
-
+    tauval   = 5e-5*t_therm     #  condensation time scale
+    #tauval = 3/8*t_therm
+    
     # Rotation Stuff
     omegaval = 1/2*Taylor**(1/2)*PdRval
     omega_xval = 0
@@ -119,8 +120,9 @@ elif nondim == 'buoyancy':                                           #  Buoyancy
     PdRval = (Prandtl / Rayleigh)**(1/2)        #  diffusion on momentum
     PtRval = 1                                  #  buoyancy force  = 1 always
     t_therm = 1/Pval                            #  thermal diffusion timescale
-    tauval   = 5e-5/t_therm                     #  condensation timescale
-
+    tauval   = 5e-5*t_therm                     #  condensation timescale
+    #tauval = 3/8 *t_therm
+    
     #Rotation stuff
     omegaval = 1/2*Taylor**(1/2)*PdRval
     omega_xval = 0
@@ -157,7 +159,7 @@ problem = de.IVP(domain,
 # save data in directory named after script
 logger.info(Rayleigh, betaval, Prandtl, Prandtlm, Taylor, theta, Fval, alphaval, gammaval, DeltaTval, sigma2, q0_amplitude, nondim, nx, ny, nz, Lx, Ly, Lz)
 data_dir = "scratch/" + sys.argv[0].split('.py')[0]
-data_dir +="_Ra{:.2e}_Ta{:.2e}_theta{:.2f}".format(Rayleigh, Taylor, theta)
+data_dir +="_Ra{:.2e}_gamma{:.2f}_beta{:.2f}_Ta{:.2e}_theta{:.2f}_{}_{}x{}x{}".format(Rayleigh, gammaval, betaval, Taylor, theta, nondim, nx, ny, nz)
 #data_dir +="_Ra{0:5.02e}_beta{1:5.02e}_Pr{2:5.02e}_Prm{3:5.02e}_Ta{0:5.02e}_theta{4:5.02e}_F{4:5.02e}_alpha{5:5.02e}_gamma{6:5.02e}_DeltaT{7:5.02e}_sigma2{8:5.02e}_q0{9:5.02e}_nondim:{10:s}_nx{11:d}_ny{12:d}_nz{13:d}_Lx{14:5.02e}_Ly{15:5.02e}_Lz{16:5.02e}".format(Rayleigh, betaval, Prandtl, Prandtlm, Taylor, theta, Fval, alphaval, gammaval, DeltaTval, sigma2, q0_amplitude, nondim, nx, ny, nz, Lx, Ly, Lz)
 if args['--label'] is not None:
     data_dir += "_{}".format(args['--label'])
@@ -305,7 +307,7 @@ if threeD:
 q.differentiate('z', out=qz)
 
 # Integration parameters
-dt = 1e-4
+dt = 1e-7
 
 #solver.stop_sim_time = 2000
 solver.stop_sim_time = np.inf
@@ -400,7 +402,7 @@ profiles.add_task('plane_avg(temp)', name='temp')
 analysis_tasks.append(profiles)
 timeseries = solver.evaluator.add_file_handler(os.path.join(data_dir, 'timeseries'), sim_dt=ts_dt)
 timeseries.add_task('vol_avg(KE)', name='KE')
-timeseries.add_task('vol_avg(Rossby)', name='Rossby')
+#timeseries.add_task('vol_avg(Rossby)', name='Rossby')
 analysis_tasks.append(timeseries)
 # Main loop
 dt = CFL.compute_dt()

@@ -402,8 +402,14 @@ profiles.add_task('plane_avg(temp)', name='temp')
 analysis_tasks.append(profiles)
 timeseries = solver.evaluator.add_file_handler(os.path.join(data_dir, 'timeseries'), sim_dt=ts_dt)
 timeseries.add_task('vol_avg(KE)', name='KE')
-#timeseries.add_task('vol_avg(Rossby)', name='Rossby')
+if threeD and Taylor > 0:
+    timeseries.add_task('vol_avg(Rossby)', name='Rossby')
 analysis_tasks.append(timeseries)
+
+checkpoint = solver.evaluator.add_file_handler(data_dir+'checkpoint', wall_dt=checkpoint_min*60, sim_dt=np.inf, iter=np.inf, max_writes=1, mode=mode)
+checkpoint.add_system(solver.state, layout = 'c')
+analysis_tasks.append(checkpoint)
+
 # Main loop
 dt = CFL.compute_dt()
 

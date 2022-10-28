@@ -131,7 +131,7 @@ elif nondim == 'buoyancy':                                           #  Buoyancy
     omega_zval = omegaval * np.cos(theta)
     
     
-    slices_dt = 0.005*(Rayleigh* Prandtl)**(1/2)
+    slices_dt = 0.001*(Rayleigh* Prandtl)**(1/2)
     snap_dt = 1.0*(Rayleigh* Prandtl)**(1/2)
     prof_dt = 0.01*(Rayleigh* Prandtl)**(1/2)
     ts_dt = 0.001*(Rayleigh* Prandtl)**(1/2)
@@ -298,7 +298,7 @@ pert = rand.standard_normal(gshape)[slices]
 
 #b['g'] = -0.0*(z - pert)
 #b['g'] = 0#T1ovDTval-(1.00-betaval)*z
-b['g'] = betaval * DeltaTval * z / Lz
+b['g'] = (betaval + DeltaTval) * z / Lz
 b.differentiate('z', out=bz)
 #q['g'] = q0val*np.exp(-betaval*z/T0val)+1e-2*np.exp(-((x-1.0)/0.01)^2)*np.exp(-((z-0.5)/0.01)^2)
 #q['g'] = q0val*np.exp(-betaval*z/T0val)+(1e-2)*np.exp(-((z-0.5)*(z-0.5)/0.02))*np.exp(-((x-1.0)*(x-1.0)/0.02))
@@ -306,14 +306,13 @@ b.differentiate('z', out=bz)
 #q = qs = np.exp(alpha*T) = np.exp(alpha * (b - beta z))
 #q += q_pert
 #q *= envelope = np.sin(pi*z/Lz)
-q['g'] = np.exp(alphaval * (b - betaval*z))
-q['g'] = q0_amplitude*np.exp(-((z-0.1)*(z-0.1)/sigma2))*np.exp(-((x-1.0)*(x-1.0)/sigma2))
+q['g'] = 1.0*np.exp(alphaval * (DeltaTval * z))
+#q['g'] = q0_amplitude*np.exp(-((z-0.1)*(z-0.1)/sigma2))*np.exp(-((x-1.0)*(x-1.0)/sigma2))
 if threeD:
-    q['g'] += q0_amplitude*np.exp(-((z-0.1)*(z-0.1)/sigma2))*np.exp(-((x-1.0)*(x-1.0)/sigma2))*np.exp(-((y-1.0)*(y-1.0)/sigma2))
+    q['g'] += q0_amplitude*np.exp(-((z-0.1)*(z-0.1)/sigma2))*np.exp(-((x-1.0)*(x-1.0)/sigma2))*np.exp(-((y-1.0)*(y-1.0)/sigma2))*np.sin(np.pi * z/Lz)
 else:
-     q['g'] += q0_amplitude*np.exp(-((z-0.1)*(z-0.1)/sigma2))*np.exp(-((x-1.0)*(x-1.0)/sigma2))
+     q['g'] += q0_amplitude*np.exp(-((z-0.1)*(z-0.1)/sigma2))*np.exp(-((x-1.0)*(x-1.0)/sigma2))*np.sin(np.pi * z/Lz)
 
-q['g'] *= np.sin(np.pi * z/Lz)     
 q.differentiate('z', out=qz)
 
 # Integration parameters
@@ -416,6 +415,8 @@ if threeD and Taylor > 0:
     timeseries.add_task('vol_avg(Rossby)', name='Rossby')
 analysis_tasks.append(timeseries)
 
+mode='append'
+checkpoint_min = 60
 checkpoint = solver.evaluator.add_file_handler(data_dir+'checkpoint', wall_dt=checkpoint_min*60, sim_dt=np.inf, iter=np.inf, max_writes=1, mode=mode)
 checkpoint.add_system(solver.state, layout = 'c')
 analysis_tasks.append(checkpoint)

@@ -39,6 +39,7 @@ Options:
     --theta=<theta>          angle between gravity and rotation vectors [default: 0]
     --wall_time=<wall_time>  wall time (in hours) [default: 23.5]
     --label=<label>          optional output directrory label [default: None]
+
 """
 from docopt import docopt
 import os
@@ -296,14 +297,23 @@ rand = np.random.RandomState(seed=42)
 pert = rand.standard_normal(gshape)[slices]
 
 #b['g'] = -0.0*(z - pert)
-b['g'] = 0#T1ovDTval-(1.00-betaval)*z
+#b['g'] = 0#T1ovDTval-(1.00-betaval)*z
+b['g'] = betaval * DeltaTval * z / Lz
 b.differentiate('z', out=bz)
 #q['g'] = q0val*np.exp(-betaval*z/T0val)+1e-2*np.exp(-((x-1.0)/0.01)^2)*np.exp(-((z-0.5)/0.01)^2)
 #q['g'] = q0val*np.exp(-betaval*z/T0val)+(1e-2)*np.exp(-((z-0.5)*(z-0.5)/0.02))*np.exp(-((x-1.0)*(x-1.0)/0.02))
 
+#q = qs = np.exp(alpha*T) = np.exp(alpha * (b - beta z))
+#q += q_pert
+#q *= envelope = np.sin(pi*z/Lz)
+q['g'] = np.exp(alphaval * (b - betaval*z))
 q['g'] = q0_amplitude*np.exp(-((z-0.1)*(z-0.1)/sigma2))*np.exp(-((x-1.0)*(x-1.0)/sigma2))
 if threeD:
-    q['g'] *= np.exp(-((y-1.0)*(y-1.0)/sigma2))
+    q['g'] += q0_amplitude*np.exp(-((z-0.1)*(z-0.1)/sigma2))*np.exp(-((x-1.0)*(x-1.0)/sigma2))*np.exp(-((y-1.0)*(y-1.0)/sigma2))
+else:
+     q['g'] += q0_amplitude*np.exp(-((z-0.1)*(z-0.1)/sigma2))*np.exp(-((x-1.0)*(x-1.0)/sigma2))
+
+q['g'] *= np.sin(np.pi * z/Lz)     
 q.differentiate('z', out=qz)
 
 # Integration parameters

@@ -287,6 +287,7 @@ b = solver.state['b']
 bz = solver.state['bz']
 q = solver.state['q']
 qz = solver.state['qz']
+T = solver.state['temp']
 
 # Linear background + perturbations damped at walls
 zb, zt = z_basis.interval
@@ -314,6 +315,7 @@ else:
      q['g'] += q0_amplitude*np.exp(-((z-0.1)*(z-0.1)/sigma2))*np.exp(-((x-1.0)*(x-1.0)/sigma2))*np.sin(np.pi * z/Lz)
 
 q.differentiate('z', out=qz)
+T['g'] = DeltaTval*z/Lz
 
 # Integration parameters
 dt = 1e-7

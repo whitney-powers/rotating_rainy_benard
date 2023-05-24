@@ -84,6 +84,26 @@ gammaval = float(args['--gamma'])
 DeltaTval = float(args['--DeltaT'])
 Taylor = float(args['--Taylor'])
 theta = float(args['--theta'])
+def filter_field(field, frac=0.25):
+    """                                                                                                                                                                                              
+    Filter a field in coefficient space by cutting off all coefficient above                                                                                                                         
+    a given threshold.  This is accomplished by changing the scale of a field,                                                                                                                       
+    forcing it into coefficient space at that small scale, then coming back to                                                                                                                       
+    the original scale.                                                                                                                                                                              
+                                                                                                                                                                                                     
+    Inputs:                                                                                                                                                                                          
+        field   - The dedalus field to filter                                                                                                                                                        
+        frac    - The fraction of coefficients to KEEP POWER IN.  If frac=0.25,                                                                                                                      
+                    The upper 75% of coefficients are set to 0.                                                                                                                                      
+    """
+    dom = field.domain
+    logger.info("filtering field {} with frac={} using a set-scales approach".format(field.name,frac))
+    orig_scale = field.scales
+    field.set_scales(frac, keep_data=True)
+    field['c']
+    field['g']
+    field.set_scales(orig_scale, keep_data=True)
+
 
 
 # initial conditions
@@ -219,7 +239,8 @@ if threeD:
 problem.substitutions['H(A)'] = '0.5*(1. + tanh(k*A))'
 problem.substitutions['qs'] = 'exp(alpha*temp)'
 problem.substitutions['rh'] = 'q/exp(alpha*temp)'
-
+problem.substitutions['m'] = 'b+gamma*q'
+problem.substitutions['Nu_m'] = 'plane_avg(m*w - P*bz - gamma*S*qz)/plane_avg(-P*bz - gamma*S*qz)'
 
 if threeD:
     problem.add_equation('dx(u) + dy(v) + wz = 0')
@@ -295,30 +316,48 @@ zb, zt = z_basis.interval
 gshape = problem.domain.dist.grid_layout.global_shape(scales=problem.domain.dealias)
 slices = problem.domain.dist.grid_layout.slices(scales=problem.domain.dealias)
 rand = np.random.RandomState(seed=42)
-pert = rand.standard_normal(gshape)[slices]
+noise = rand.standard_normal(gshape)[slices]
+noise_field = domain.new_field()
+#noise_field.set_scales(1, keep_data=False)
+noise_field.set_scales(domain.dealias, keep_data=False)
+noise_field['g'] = noise - np.mean(noise,axis=0) # Removes k0 component WARNING: MAY NOT WORK IN 3D                                                                                              
+filter_field(noise_field)
 
-#b['g'] = -0.0*(z - pert)
-#b['g'] = 0#T1ovDTval-(1.00-betaval)*z
-b['g'] = (betaval + DeltaTval) * z / Lz
-b.differentiate('z', out=bz)
-#q['g'] = q0val*np.exp(-betaval*z/T0val)+1e-2*np.exp(-((x-1.0)/0.01)^2)*np.exp(-((z-0.5)/0.01)^2)
-#q['g'] = q0val*np.exp(-betaval*z/T0val)+(1e-2)*np.exp(-((z-0.5)*(z-0.5)/0.02))*np.exp(-((x-1.0)*(x-1.0)/0.02))
+one = domain.new_field()
+one.set_scales(1)
+one['g']=1.0
 
-#q = qs = np.exp(alpha*T) = np.exp(alpha * (b - beta z))
-#q += q_pert
-#q *= envelope = np.sin(pi*z/Lz)
-q['g'] = 1.0*np.exp(alphaval * (DeltaTval * z))
-#q['g'] = q0_amplitude*np.exp(-((z-0.1)*(z-0.1)/sigma2))*np.exp(-((x-1.0)*(x-1.0)/sigma2))
-if threeD:
-    q['g'] += q0_amplitude*np.exp(-((z-0.1)*(z-0.1)/sigma2))*np.exp(-((x-1.0)*(x-1.0)/sigma2))*np.exp(-((y-1.0)*(y-1.0)/sigma2))*np.sin(np.pi * z/Lz)
-else:
-     q['g'] += q0_amplitude*np.exp(-((z-0.1)*(z-0.1)/sigma2))*np.exp(-((x-1.0)*(x-1.0)/sigma2))*np.sin(np.pi * z/Lz)
+if args['--restart'] is None:
+    #b['g'] = -0.0*(z - pert)
+    #b['g'] = 0#T1ovDTval-(1.00-betaval)*z
+    #b.set_scales(domain.dealias, keep_data=True)
+    noise_field.set_scales(1, keep_data=True)
 
-q.differentiate('z', out=qz)
-T['g'] = DeltaTval*z/Lz
+    b['g'] = noise_field['g']*1e-1
+    b['g'] += (betaval + DeltaTval) * z*one['g'] / Lz
+    b.differentiate('z', out=bz)
+    #q['g'] = q0val*np.exp(-betaval*z/T0val)+1e-2*np.exp(-((x-1.0)/0.01)^2)*np.exp(-((z-0.5)/0.01)^2)
+    #q['g'] = q0val*np.exp(-betaval*z/T0val)+(1e-2)*np.exp(-((z-0.5)*(z-0.5)/0.02))*np.exp(-((x-1.0)*(x-1.0)/0.02))
+    
+    #q = qs = np.exp(alpha*T) = np.exp(alpha * (b - beta z))
+    #q += q_pert
+    #q *= envelope = np.sin(pi*z/Lz)
+    q['g'] = 1.0*np.exp(alphaval * (DeltaTval * z))
+    #q['g'] = q0_amplitude*np.exp(-((z-0.1)*(z-0.1)/sigma2))*np.exp(-((x-1.0)*(x-1.0)/sigma2))
+    #if threeD:
+    #    q['g'] += q0_amplitude*np.exp(-((z-0.1)*(z-0.1)/sigma2))*np.exp(-((x-1.0)*(x-1.0)/sigma2))*np.exp(-((y-1.0)*(y-1.0)/sigma2))*np.sin(np.pi * z/Lz)
+    #else:
+    #     q['g'] += q0_amplitude*np.exp(-((z-0.1)*(z-0.1)/sigma2))*np.exp(-((x-1.0)*(x-1.0)/sigma2))*np.sin(np.pi * z/Lz)
+    
+    q.differentiate('z', out=qz)
+    T['g'] = DeltaTval*z/Lz
 
-# Integration parameters
-dt = 1e-7
+    # Integration parameters
+    dt = 1e-7
+else:    
+    write, dt = solver.load_state(args['--restart'], -1)
+    mode = 'append'
+
 
 #solver.stop_sim_time = 2000
 solver.stop_sim_time = np.inf
@@ -413,6 +452,7 @@ profiles.add_task('plane_avg(temp)', name='temp')
 analysis_tasks.append(profiles)
 timeseries = solver.evaluator.add_file_handler(os.path.join(data_dir, 'timeseries'), sim_dt=ts_dt)
 timeseries.add_task('vol_avg(KE)', name='KE')
+timeseries.add_task('vol_avg(Nu_m)', name='Nu_m')
 if threeD and Taylor > 0:
     timeseries.add_task('vol_avg(Rossby)', name='Rossby')
 analysis_tasks.append(timeseries)

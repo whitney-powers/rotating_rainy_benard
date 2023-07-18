@@ -15,24 +15,23 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 plt.ioff()
 from dedalus.extras import plot_tools
-import palettable
-dense = palettable.cmocean.sequential.Dense_20.mpl_colormap
+
+
 def main(filename, start, count, output):
     
     midplane(filename, start, count, output)
-    topplane(filename, start, count, output)
     vertical(filename, start, count, output)
-    
+
 def midplane(filename, start, count, output):
     """Slices in x-y of midplane in z."""
 
     # Plot settings
     #tasks = ['b midplane', 'rh midplane', 'q midplane', 'u midplane', 'v midplane', 'w midplane']
     #even_scale = [False, False, False, True, True, True]
-    tasks = ['b midplane', 'rh midplane']
-    even_scale = [False, False]
+    tasks = ['w midplane', 'z vorticity midplane']
+    even_scale = [True, True]
     scale = 2.5
-    dpi = 200
+    dpi = 500
     title_func = lambda sim_time: 't = {:.3f}'.format(sim_time)
     savename_func = lambda write: 'mid_{:06}.png'.format(write)
     # Layout
@@ -55,59 +54,10 @@ def midplane(filename, start, count, output):
                 dset = file['tasks'][task]
                 image_axes = (2, 1)
                 data_slices = (index, slice(None), slice(None), 0)
-                if task=='rh midplane':
-                    cmap =dense
+                if task=='w midplane':
+                    cmap ='PiYG'
                 else:
-                    cmap='RdBu_r'
-                plot_tools.plot_bot(dset, image_axes, data_slices, axes=axes, title=task, even_scale=even_scale[n], cmap=cmap)
-            # Add time title
-            title = title_func(file['scales/sim_time'][index])
-            title_height = 1 - 0.5 * mfig.margin.top / mfig.fig.y
-            fig.suptitle(title, x=0.48, y=title_height, ha='left')
-            # Save figure
-            savename = savename_func(file['scales/write_number'][index])
-            savepath = output.joinpath(savename)
-            fig.savefig(str(savepath), dpi=dpi)
-            fig.clear()
-    plt.close(fig)
-
-
-def topplane(filename, start, count, output):
-    """Slices in x-y of midplane in z."""
-
-    # Plot settings
-    #tasks = ['b midplane', 'rh midplane', 'q midplane', 'u midplane', 'v midplane', 'w midplane']
-    #even_scale = [False, False, False, True, True, True]
-    tasks = ['b z.9', 'rh z.9']
-    even_scale = [False, False]
-    scale = 2.5
-    dpi = 200
-    title_func = lambda sim_time: 't = {:.3f}'.format(sim_time)
-    savename_func = lambda write: 'top_{:06}.png'.format(write)
-    # Layout
-    nrows, ncols = 1, 2
-    image = plot_tools.Box(2, 2)
-    pad = plot_tools.Frame(0.2, 0.2, 0.1, 0.1)
-    margin = plot_tools.Frame(0.3, 0.2, 0.1, 0.1)
-
-    # Create multifigure
-    mfig = plot_tools.MultiFigure(nrows, ncols, image, pad, margin, scale)
-    fig = mfig.figure
-    # Plot writes
-    with h5py.File(filename, mode='r') as file:
-        for index in range(start, start+count):
-            for n, task in enumerate(tasks):
-                # Build subfigure axes
-                i, j = divmod(n, ncols)
-                axes = mfig.add_axes(i, j, [0, 0, 1, 1])
-                # Call plotting helper (dset axes: [t, x, y, z])
-                dset = file['tasks'][task]
-                image_axes = (2, 1)
-                data_slices = (index, slice(None), slice(None), 0)
-                if task=='rh z.9':
-                    cmap =dense
-                else:
-                    cmap='RdBu_r'
+                    cmap='PuOr'
                 plot_tools.plot_bot(dset, image_axes, data_slices, axes=axes, title=task, even_scale=even_scale[n], cmap=cmap)
             # Add time title
             title = title_func(file['scales/sim_time'][index])
@@ -126,10 +76,10 @@ def vertical(filename, start, count, output):
     # Plot settings
     #tasks = ['b vertical', 'rh vertical', 'q vertical', 'u vertical', 'v vertical', 'w vertical']
     #even_scale = [False, False, False, True, True, True]
-    tasks = ['b vertical', 'rh vertical']
-    even_scale = [False, False, False]
+    tasks = ['w vertical', 'z vorticity vertical']
+    even_scale = [True, True]
     scale = 2.5
-    dpi = 200
+    dpi = 500
     title_func = lambda sim_time: 't = {:.3f}'.format(sim_time)
     savename_func = lambda write: 'vert_{:06}.png'.format(write)
     # Layout
@@ -153,10 +103,10 @@ def vertical(filename, start, count, output):
                 dset = file['tasks'][task]
                 image_axes = (2, 3)
                 data_slices = (index, 0, slice(None), slice(None))
-                if task=='rh vertical':
-                    cmap =dense
+                if task=='w vertical':
+                    cmap ='PiYG'
                 else:
-                    cmap='RdBu_r'
+                    cmap='PuOr'
                 plot_tools.plot_bot(dset, image_axes, data_slices, axes=axes, cmap=cmap, title=task, even_scale=even_scale[n])
             # Add time title
             title = title_func(file['scales/sim_time'][index])
@@ -177,7 +127,7 @@ def integral(filename, start, count, output):
     # Plot settings
     tasks = ['b integral x4']
     scale = 2.5
-    dpi = 200
+    dpi = 500
     title_func = lambda sim_time: 't = {:.3f}'.format(sim_time)
     savename_func = lambda write: 'int_{:06}.png'.format(write)
     # Layout

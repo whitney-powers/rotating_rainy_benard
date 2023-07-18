@@ -12,7 +12,7 @@ Default paramters from Vallis, Parker, and Tobias (2018)
 http://empslocal.ex.ac.uk/people/staff/gv219/papers/VPT_convection18.pdf
 
 Usage:
-    rot_rainy_benard.py [--beta=<beta> --Rayleigh=<Rayleigh> --Prandtl=<Prandtl> --Prandtlm=<Prandtlm>  --Taylor=<Taylor> --theta=<theta> --F=<F> --alpha=<alpha> --gamma=<gamma> --DeltaT=<DeltaT> --sigma2=<sigma2> --q0=<q0> --nx=<nx> --ny=<ny> --nz=<nz> --Lx=<Lx> --Ly=<Ly> --Lz=<Lz> --restart=<restart_file> --filter=<filter> --mesh=<mesh> --nondim=<nondim> --wall_time=<wall_time> --label=<label>] 
+    rot_rainy_benard.py [--beta=<beta> --Rayleigh=<Rayleigh> --Prandtl=<Prandtl> --Prandtlm=<Prandtlm>  --Taylor=<Taylor> --theta=<theta> --F=<F> --alpha=<alpha> --gamma=<gamma> --DeltaT=<DeltaT> --sigma2=<sigma2> --q0=<q0> --nx=<nx> --ny=<ny> --nz=<nz> --Lx=<Lx> --Ly=<Ly> --Lz=<Lz> --restart=<restart_file> --filter=<filter> --mesh=<mesh> --nondim=<nondim> --wall_time=<wall_time> --label=<label> --tanhk=<tanhk>] 
 
 Options:
     --Rayleigh=<Rayleigh>    Rayleigh number [default: 1e6]
@@ -39,7 +39,7 @@ Options:
     --theta=<theta>          angle between gravity and rotation vectors [default: 0]
     --wall_time=<wall_time>  wall time (in hours) [default: 23.5]
     --label=<label>          optional output directrory label [default: None]
-
+    --tanhk=<tanhk>         width of Tanh function in condensation term [default: 1e5]
 """
 from docopt import docopt
 import os
@@ -51,6 +51,7 @@ from dedalus import public as de
 from dedalus.extras import flow_tools
 from dedalus.tools  import post
 
+from scipy.special import lambertw
 import logging
 logger = logging.getLogger(__name__)
 
@@ -84,6 +85,7 @@ gammaval = float(args['--gamma'])
 DeltaTval = float(args['--DeltaT'])
 Taylor = float(args['--Taylor'])
 theta = float(args['--theta'])
+k = float(args['--tanhk'])
 def filter_field(field, frac=0.25):
     """                                                                                                                                                                                              
     Filter a field in coefficient space by cutting off all coefficient above                                                                                                                         
@@ -180,7 +182,7 @@ problem = de.IVP(domain,
 # save data in directory named after script
 logger.info(Rayleigh, betaval, Prandtl, Prandtlm, Taylor, theta, Fval, alphaval, gammaval, DeltaTval, sigma2, q0_amplitude, nondim, nx, ny, nz, Lx, Ly, Lz)
 data_dir = "scratch/" + sys.argv[0].split('.py')[0]
-data_dir +="_Ra{:.2e}_gamma{:.2f}_beta{:.2f}_Ta{:.2e}_theta{:.2f}_{}_{}x{}x{}".format(Rayleigh, gammaval, betaval, Taylor, theta, nondim, nx, ny, nz)
+data_dir +="_Ra{:.2e}_gamma{:.2f}_beta{:.2f}_Ta{:.2e}_theta{:.2f}_k{:.1e}_{}_{}x{}x{}".format(Rayleigh, gammaval, betaval, Taylor, theta, k, nondim, nx, ny, nz)
 #data_dir +="_Ra{0:5.02e}_beta{1:5.02e}_Pr{2:5.02e}_Prm{3:5.02e}_Ta{0:5.02e}_theta{4:5.02e}_F{4:5.02e}_alpha{5:5.02e}_gamma{6:5.02e}_DeltaT{7:5.02e}_sigma2{8:5.02e}_q0{9:5.02e}_nondim:{10:s}_nx{11:d}_ny{12:d}_nz{13:d}_Lx{14:5.02e}_Ly{15:5.02e}_Lz{16:5.02e}".format(Rayleigh, betaval, Prandtl, Prandtlm, Taylor, theta, Fval, alphaval, gammaval, DeltaTval, sigma2, q0_amplitude, nondim, nx, ny, nz, Lx, Ly, Lz)
 if args['--label'] is not None:
     data_dir += "_{}".format(args['--label'])
@@ -207,7 +209,7 @@ problem.parameters['omega'] = omegaval
 
 
 # numerics parameters
-problem.parameters['k'] = 1e5 # cutoff for tanh
+problem.parameters['k'] = k # cutoff for tanh
 problem.parameters['Lx'] = Lx
 problem.parameters['Lz'] = Lz
 if threeD:
@@ -217,10 +219,12 @@ if threeD:
     problem.substitutions['plane_avg(A)'] = 'integ(A, "x", "y")/Lx/Ly'
     problem.substitutions['vol_avg(A)'] = 'integ(A)/Lx/Ly/Lz'
     problem.substitutions['KE'] = '0.5*(u*u + v*v + w*w)'
+    problem.substitutions['u_rms'] = 'sqrt((u*u + v*v + w*w))'
 else:
     problem.substitutions['plane_avg(A)'] = 'integ(A, "x")/Lx'
     problem.substitutions['vol_avg(A)'] = 'integ(A)/Lx/Lz'
     problem.substitutions['KE'] = '0.5*(u*u + w*w)'
+    problem.substitutions['u_rms'] = 'sqrt((u*u + w*w))'
 
 if threeD:
     problem.substitutions['Coriolis_x'] = '(2*omega_y*w - 2*omega_z*v)'
@@ -232,8 +236,9 @@ if threeD:
     problem.substitutions['vorticity_x'] = '(dy(w) - vz)'        
     problem.substitutions['vorticity_z'] = '(dx(v) - dy(u))'
     problem.substitutions['enstrophy']   = '(vorticity_x**2 + vorticity_y**2 + vorticity_z**2)'
-    problem.substitutions['Rossby'] = '(sqrt(enstrophy)/(2*omega))'
-
+    problem.substitutions['Rossby_vort'] = '(sqrt(enstrophy)/(2*omega))'
+    problem.substitutions['Rossby_vort_z'] = 'sqrt(vorticity_z**2)/(2*omega)'
+    problem.substitutions['Rossby_bulk'] = 'u_rms/(2*omega*Lz)'
 
 
 problem.substitutions['H(A)'] = '0.5*(1. + tanh(k*A))'
@@ -241,6 +246,8 @@ problem.substitutions['qs'] = 'exp(alpha*temp)'
 problem.substitutions['rh'] = 'q/exp(alpha*temp)'
 problem.substitutions['m'] = 'b+gamma*q'
 problem.substitutions['Nu_m'] = 'plane_avg(m*w - P*bz - gamma*S*qz)/plane_avg(-P*bz - gamma*S*qz)'
+problem.substitutions['Nu_m_alt'] = '1 + (plane_avg(w*m)/(-P*(beta+DeltaT)-gamma*S*(exp(alpha*DeltaT)-1)))'
+problem.substitutions['Re'] = 'plane_avg(u_rms*Lz/PdR)'
 
 if threeD:
     problem.add_equation('dx(u) + dy(v) + wz = 0')
@@ -328,29 +335,21 @@ one.set_scales(1)
 one['g']=1.0
 
 if args['--restart'] is None:
-    #b['g'] = -0.0*(z - pert)
-    #b['g'] = 0#T1ovDTval-(1.00-betaval)*z
-    #b.set_scales(domain.dealias, keep_data=True)
     noise_field.set_scales(1, keep_data=True)
 
-    b['g'] = noise_field['g']*1e-1
-    b['g'] += (betaval + DeltaTval) * z*one['g'] / Lz
+    T_bot = 0
+    P_IC = T_bot + gammaval*np.exp(gammaval*T_bot)
+    Q_IC = betaval + DeltaTval + gammaval*(np.exp(alphaval*(T_bot+DeltaTval)) - np.exp(alphaval*T_bot)) 
+    C_IC = P_IC + (Q_IC-betaval)*z
+    T['g'] = np.real(C_IC - lambertw(alphaval*gammaval*np.exp(alphaval*C_IC))/alphaval)
+    b['g'] = T['g']+betaval*z
+    q['g'] = np.exp(alphaval * T['g'])
+
+    
+    b['g'] += noise_field['g']*np.sin(z*np.pi)*1e-1
     b.differentiate('z', out=bz)
-    #q['g'] = q0val*np.exp(-betaval*z/T0val)+1e-2*np.exp(-((x-1.0)/0.01)^2)*np.exp(-((z-0.5)/0.01)^2)
-    #q['g'] = q0val*np.exp(-betaval*z/T0val)+(1e-2)*np.exp(-((z-0.5)*(z-0.5)/0.02))*np.exp(-((x-1.0)*(x-1.0)/0.02))
-    
-    #q = qs = np.exp(alpha*T) = np.exp(alpha * (b - beta z))
-    #q += q_pert
-    #q *= envelope = np.sin(pi*z/Lz)
-    q['g'] = 1.0*np.exp(alphaval * (DeltaTval * z))
-    #q['g'] = q0_amplitude*np.exp(-((z-0.1)*(z-0.1)/sigma2))*np.exp(-((x-1.0)*(x-1.0)/sigma2))
-    #if threeD:
-    #    q['g'] += q0_amplitude*np.exp(-((z-0.1)*(z-0.1)/sigma2))*np.exp(-((x-1.0)*(x-1.0)/sigma2))*np.exp(-((y-1.0)*(y-1.0)/sigma2))*np.sin(np.pi * z/Lz)
-    #else:
-    #     q['g'] += q0_amplitude*np.exp(-((z-0.1)*(z-0.1)/sigma2))*np.exp(-((x-1.0)*(x-1.0)/sigma2))*np.sin(np.pi * z/Lz)
-    
+
     q.differentiate('z', out=qz)
-    T['g'] = DeltaTval*z/Lz
 
     # Integration parameters
     dt = 1e-7
@@ -453,8 +452,13 @@ analysis_tasks.append(profiles)
 timeseries = solver.evaluator.add_file_handler(os.path.join(data_dir, 'timeseries'), sim_dt=ts_dt)
 timeseries.add_task('vol_avg(KE)', name='KE')
 timeseries.add_task('vol_avg(Nu_m)', name='Nu_m')
+timeseries.add_task('vol_avg(Nu_m_alt)', name='Nu_m_alt')
+timeseries.add_task('vol_avg(Re)', name='Re')
 if threeD and Taylor > 0:
-    timeseries.add_task('vol_avg(Rossby)', name='Rossby')
+    timeseries.add_task('vol_avg(Rossby_bulk)', name='Rossby_bulk')
+    timeseries.add_task('vol_avg(Rossby_vort)', name='Rossby_vort')
+    timeseries.add_task('vol_avg(Rossby_vort_z)', name='Rossby_vort_z')
+    # in older runs Rossby is Rossby vort
 analysis_tasks.append(timeseries)
 
 mode='append'
@@ -498,5 +502,6 @@ finally:
     for task in analysis_tasks:
         logger.info(task.base_path)
         post.merge_analysis(task.base_path)
+    logger.info('et fin')
 
 

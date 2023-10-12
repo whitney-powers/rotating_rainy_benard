@@ -20,7 +20,8 @@ Options:
     --gamma=<gamma>   gamma value [default: 0.19]
     --q0=<q0>         basal q value [default: 0.6]
 
-    --Taylor=<Ta>     Taylor number [default:0]
+    --Taylor=<Ta>     Taylor number [default: 0]
+    --theta=<theta>   Inclination of rotation axis from z [default: 0]
 
     --Rayleigh=<Ra>   Rayleigh number [default: 1e5]
 
@@ -183,7 +184,7 @@ else:
 ny = nx
 
 
-data_dir = case+'/rainy_benard_Ra{:}_tau{:.2g}_k{:.2g}_nz{:d}_nx{:d}_ny{:d}'.format(args['--Rayleigh'], tau, k, nz, nx, ny)
+data_dir = case+'/rainy_benard_Ra{:}_Ta{:}_tau{:.2g}_k{:.2g}_nz{:d}_nx{:d}_ny{:d}'.format(args['--Rayleigh'], args['--Taylor'],  tau, k, nz, nx, ny)
 
 if args['--label']:
     data_dir += '_{:s}'.format(args['--label'])
@@ -197,6 +198,7 @@ logger.info('α={:}, β={:}, γ={:}, tau={:}, k={:}'.format(α,β,γ,tau,k))
 Prandtlm = 1
 Prandtl = 1
 Rayleigh = float(args['--Rayleigh'])
+Taylor = float(args['--Taylor'])
 
 run_time_buoy = args['--run_time_buoy']
 if run_time_buoy != None:
@@ -293,22 +295,26 @@ problem = de.IVP(vars, namespace=locals())
 
 nondim = args['--nondim']
 if nondim == 'diffusion':
-    P = 1                      #  diffusion on buoyancy. Always = 1 in this scaling.
-    S = Prandtlm               #  diffusion on moisture  k_q / k_b
-    PdR = Prandtl              #  diffusion on momentum
-    PtR = Prandtl*Rayleigh     #  Prandtl times Rayleigh = buoyancy force
+    P = 1                                   #  diffusion on buoyancy. Always = 1 in this scaling.
+    S = Prandtlm                            #  diffusion on moisture  k_q / k_b
+    PdR = Prandtl                           #  diffusion on momentum
+    PtR = Prandtl*Rayleigh                  #  Prandtl times Rayleigh = buoyancy force
+    OmegaMag = 1/2*Taylor**(1/2)*PdR        #  Rotation rate
 elif nondim == 'buoyancy':
     P = (Rayleigh * Prandtl)**(-1/2)         #  diffusion on buoyancy
     S = (Rayleigh * Prandtlm)**(-1/2)        #  diffusion on moisture
     PdR = (Prandtl / Rayleigh)**(1/2)        #  diffusion on momentum
     PtR = 1
+    OmegaMag = 1/2*Taylor**(1/2)*PdR         # Rotation rate
     #tau_in /=                     # think through what this should be
 else:
     raise ValueError('nondim {:} not in valid set [diffusion, buoyancy]'.format(nondim))
-
+# Define rotation vector, rotation vector is always in the yz plane 
+theta = float(args['--theta'])
+Omega = OmegaMag * (np.cos(theta)*ez + np.sin(theta)*ey)
 
 problem.add_equation('div(u) + τp + 1/PdR*dot(lift(τu2,-1),ez) = 0')
-problem.add_equation('dt(u) - PdR*lap(u) + grad(p) - PtR*b*ez + lift(τu1, -1) + lift(τu2, -2) = cross(u, ω)')
+problem.add_equation('dt(u) - PdR*lap(u) + grad(p) - PtR*b*ez + lift(τu1, -1) + 2*cross(Omega,u) + lift(τu2, -2) = cross(u, ω)')
 # problem.add_equation('dt(b) - P*lap(b) + u@grad(b0) - γ/tau*(q-α*qs0*b)*scrN + lift(τb1, -1) + lift(τb2, -2) = - (u@grad(b)) + γ/tau*((q-qs)*H(q-qs) - (q-α*qs0*b)*scrN_g)')
 # problem.add_equation('dt(q) - S*lap(q) + u@grad(q0) + 1/tau*(q-α*qs0*b)*scrN + lift(τq1, -1) + lift(τq2, -2) = - (u@grad(q)) - 1/tau*((q-qs)*H(q-qs) - (q-α*qs0*b)*scrN_g)')
 problem.add_equation('dt(b) - P*lap(b) + lift(τb1, -1) + lift(τb2, -2) = - (u@grad(b)) + γ/tau*((q-qs)*H(q-qs))')

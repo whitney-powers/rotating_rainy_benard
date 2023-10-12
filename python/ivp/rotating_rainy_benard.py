@@ -96,10 +96,12 @@ dist = de.Distributor(coords, dtype=dtype, mesh=mesh)
 case = args['<case>']
 if case == 'analytic':
     import os
-    import analytic_atmosphere
+    #import sys
+    
+    import analytic_atmosphere 
 
-    from analytic_zc import f_zc as zc_analytic
-    from analytic_zc import f_Tc as Tc_analytic
+    #from analytic_zc import f_zc as zc_analytic
+    #from analytic_zc import f_Tc as Tc_analytic
     α = float(args['--alpha'])
     β = float(args['--beta'])
     γ = float(args['--gamma'])
@@ -108,7 +110,8 @@ if case == 'analytic':
     tau = float(args['--tau'])
 
     if q0 < 1:
-        atm_name = 'unsaturated'
+         raise NotImplementedError('Analytic unsaturated atmosphere not yet implimented in rotating script')
+         atm_name = 'unsaturated'
     elif q0 == 1:
         atm_name = 'saturated'
     else:
@@ -286,6 +289,7 @@ if has_k0:
 grad = lambda A: de.Gradient(A, coords)
 trans = lambda A: de.TransposeComponents(A)
 curl = lambda A: de.Curl(A)
+cross = lambda A,B: de.cross(A,B)
 
 e = grad(u) + trans(grad(u))
 ω = curl(u)
@@ -313,8 +317,12 @@ else:
 theta = float(args['--theta'])
 Omega = OmegaMag * (np.cos(theta)*ez + np.sin(theta)*ey)
 
+if Taylor==0:
+     Coriolis=0
+else:
+     Coriolis = 2*cross(Omega,u)
 problem.add_equation('div(u) + τp + 1/PdR*dot(lift(τu2,-1),ez) = 0')
-problem.add_equation('dt(u) - PdR*lap(u) + grad(p) - PtR*b*ez + lift(τu1, -1) + 2*cross(Omega,u) + lift(τu2, -2) = cross(u, ω)')
+problem.add_equation('dt(u) - PdR*lap(u) + grad(p) - PtR*b*ez + lift(τu1, -1) + Coriolis + lift(τu2, -2) = cross(u, ω)')
 # problem.add_equation('dt(b) - P*lap(b) + u@grad(b0) - γ/tau*(q-α*qs0*b)*scrN + lift(τb1, -1) + lift(τb2, -2) = - (u@grad(b)) + γ/tau*((q-qs)*H(q-qs) - (q-α*qs0*b)*scrN_g)')
 # problem.add_equation('dt(q) - S*lap(q) + u@grad(q0) + 1/tau*(q-α*qs0*b)*scrN + lift(τq1, -1) + lift(τq2, -2) = - (u@grad(q)) - 1/tau*((q-qs)*H(q-qs) - (q-α*qs0*b)*scrN_g)')
 problem.add_equation('dt(b) - P*lap(b) + lift(τb1, -1) + lift(τb2, -2) = - (u@grad(b)) + γ/tau*((q-qs)*H(q-qs))')

@@ -9,10 +9,14 @@ Vallis, Parker & Tobias, 2019, JFM,
 This script solves EVPs for an existing atmospheres, solved for by scripts in the nlbvp section.
 
 Usage:
-    convective_onset.py <case> [options]
+    convective_onset.py [options]
 
 Options:
-    <cases>           Case (or cases) to calculate onset for
+                      Properties of analytic atmosphere, if used
+    --alpha=<alpha>   alpha value [default: 3]
+    --beta=<beta>     beta value  [default: 1.1]
+    --gamma=<gamma>   gamma value [default: 0.19]
+    --q0=<q0>         basal q value [default: 0.6]
 
     --tau=<tau>       If set, override value of tau
     --k=<k>           If set, override value of k
@@ -22,6 +26,10 @@ Options:
     --min_Ra=<minR>   Minimum Rayleigh number to sample [default: 1e4]
     --max_Ra=<maxR>   Maximum Rayleigh number to sample [default: 1e5]
     --num_Ra=<nRa>    How many Rayleigh numbers to sample [default: 5]
+
+    --min_kx=<mnkx>   Min kx [default: 0.1]
+    --max_kx=<mxkx>   Max kx [default: 33]
+    --num_kx=<nkx>    How many kxs to sample [default: 50]
 
     --top-stress-free     Stress-free upper boundary
     --stress-free         Stress-free both boundaries
@@ -33,8 +41,11 @@ Options:
     --erf             Use an erf rather than a tanh for the phase transition
     --Legendre        Use Legendre polynomials
 
+    --relaxation_method=<re>     Method for relaxing the analytic atmosphere
 
     --dense           Solve densely for all eigenvalues (slow)
+
+    --tol_crit_Ra=<tol>    Tolerance on frequency for critical growth [default: 1e-5]
 
     --verbose         Show plots on screen
 """
@@ -48,11 +59,36 @@ import numpy as np
 import dedalus.public as de
 import h5py
 
+from rainy_evp import RainyBenardEVP, mode_reject
+from etools import Eigenproblem
+
+import matplotlib.pyplot as plt
+
 from docopt import docopt
 args = docopt(__doc__)
 
+Legendre = args['--Legendre']
+erf = args['--erf']
+nondim = args['--nondim']
+if args['--relaxation_method']:
+    relaxation_method = args['--relaxation_method']
+else:
+    relaxation_method = 'none'
+
 N_evals = int(float(args['--eigs']))
 target = float(args['--target'])
+
+min_kx = float(args['--min_kx'])
+max_kx = float(args['--max_kx'])
+nkx = int(float(args['--num_kx']))
+
+if args['--stress-free']:
+    bc_type = 'stress-free'
+elif args['--top-stress-free']:
+    bc_type = 'top-stress-free'
+else:
+    bc_type = None # default no-slip
+
 
 dealias = 3/2
 dtype = np.complex128
@@ -65,208 +101,25 @@ coords = de.CartesianCoordinates('x', 'y', 'z')
 dist = de.Distributor(coords, dtype=dtype)
 dealias = 2
 
-case = args['<case>']
-if case == 'analytic':
-    import analytic_atmosphere
+α = float(args['--alpha'])
+β = float(args['--beta'])
+γ = float(args['--gamma'])
+k = float(args['--k'])
+q0 = float(args['--q0'])
+tau = float(args['--tau'])
 
-    from analytic_zc import f_zc as zc_analytic
-    from analytic_zc import f_Tc as Tc_analytic
-    α = 3
-    β = 1.1
-    γ = 0.19
-    case += '_unsaturated/alpha{:}_beta{:}_gamma{:}/tau{:}_k{:}'.format(α,β,γ,args['--tau'],args['--k'])
-    if args['--erf']:
-        case += '_erf'
-    sol = analytic_atmosphere.unsaturated
-    zc = zc_analytic()(γ)
-    Tc = Tc_analytic()(γ)
+nz = int(float(args['--nz']))
 
-    nz = int(float(args['--nz']))
-    if args['--Legendre']:
-        zb = de.Legendre(coords.coords[2], size=nz, bounds=(0, Lz), dealias=dealias)
-        case += '_Legendre'
-    else:
-        zb = de.ChebyshevT(coords.coords[2], size=nz, bounds=(0, Lz), dealias=dealias)
+logger.info('α={:}, β={:}, γ={:}, tau={:}, k={:}'.format(α,β,γ,tau, k))
 
-    sol = sol(dist, zb, β, γ, zc, Tc, dealias=2, q0=0.6, α=α)
-    sol['b'].change_scales(1)
-    sol['q'].change_scales(1)
-    sol['b'] = sol['b']['g']
-    sol['q'] = sol['q']['g']
-    sol['z'].change_scales(1)
-    nz_sol = sol['z']['g'].shape[-1]
-    if not os.path.exists('{:s}/'.format(case)):
-        os.makedirs('{:s}/'.format(case))
-else:
-    f = h5py.File(case+'/drizzle_sol/drizzle_sol_s1.h5', 'r')
-    sol = {}
-    for task in f['tasks']:
-        sol[task] = f['tasks'][task][0,0,0][:]
-    sol['z'] = f['tasks']['b'].dims[3][0][:]
-    tau_in = sol['tau'][0]
-    k = sol['k'][0]
-    α = sol['α'][0]
-    β = sol['β'][0]
-    γ = sol['γ'][0]
-    nz_sol = sol['z'].shape[0]
-if args['--nz']:
-    nz = int(float(args['--nz']))
-else:
-    nz = nz_sol
-
-if args['--tau']:
-    tau_in = float(args['--tau'])
-if args['--k']:
-    k = float(args['--k'])
-logger.info('α={:}, β={:}, γ={:}, tau={:}, k={:}'.format(α,β,γ,tau_in, k))
-
-if args['--Legendre']:
-    zb = de.Legendre(coords.coords[2], size=nz, bounds=(0, Lz), dealias=dealias)
-else:
-    zb = de.ChebyshevT(coords.coords[2], size=nz, bounds=(0, Lz), dealias=dealias)
-z = zb.local_grid(1)
-zd = zb.local_grid(2)
-
-b0 = dist.Field(name='b0', bases=zb)
-q0 = dist.Field(name='q0', bases=zb)
-
-scale_ratio = nz_sol/nz
-b0.change_scales(scale_ratio)
-q0.change_scales(scale_ratio)
-logger.info('rescaling b0, q0 to match background from {:} to {:} coeffs (ratio: {:})'.format(nz, nz_sol, scale_ratio))
-
-b0['g'] = sol['b']
-q0['g'] = sol['q']
-
-
-p = dist.Field(name='p', bases=zb)
-u = dist.VectorField(coords, name='u', bases=zb)
-b = dist.Field(name='b', bases=zb)
-q = dist.Field(name='q', bases=zb)
-
-τp = dist.Field(name='τp')
-τu1 = dist.VectorField(coords, name='τu1')
-τu2 = dist.VectorField(coords, name='τu2')
-τb1 = dist.Field(name='τb1')
-τb2 = dist.Field(name='τb2')
-τq1 = dist.Field(name='τq1')
-τq2 = dist.Field(name='τq2')
-
-lift = lambda A, n: de.Lift(A, zb, n)
-
-ex, ey, ez = coords.unit_vector_fields(dist)
-
-z_grid = dist.Field(name='z_grid', bases=zb)
-z_grid['g'] = z
-
-T0 = b0 - β*z_grid
-qs0 = np.exp(α*T0).evaluate()
-
-from scipy.special import erf
-if args['--erf']:
-    H = lambda A: 0.5*(1+erf(k*A))
-    scrN = (H(q0 - qs0) + 1/2*(q0 - qs0)*k*2*(np.pi)**(-1/2)*np.exp(-k**2*(q0 - qs0)**2)).evaluate()
-else:
-    H = lambda A: 0.5*(1+np.tanh(k*A))
-    scrN = (H(q0 - qs0) + 1/2*(q0 - qs0)*k*(1-(np.tanh(k*(q0 - qs0)))**2)).evaluate()
-scrN.name='scrN'
-
-tau = dist.Field(name='tau')
-kx = dist.Field(name='kx')
-Rayleigh = dist.Field(name='Ra_c')
-
-# follows Roberts 1972 convention, eq 1.1, 2.8
-dx = lambda A: 1j*kx*A # 1-d mode onset
-dy = lambda A: 0*A # flexibility to add 2-d mode if desired
-
-grad = lambda A: de.grad(A) + ex*dx(A) + ey*dy(A)
-div = lambda A:  de.div(A) + dx(ex@A) + dy(ey@A)
-lap = lambda A: de.lap(A) + dx(dx(A)) + dy(dy(A))
-trans = lambda A: de.TransposeComponents(A)
-
-e = grad(u) + trans(grad(u))
-vars = [p, u, b, q, τp, τu1, τu2, τb1, τb2, τq1, τq2]
-# fix Ra, find omega
-dt = lambda A: ω*A
-ω = dist.Field(name='ω')
-problem = de.EVP(vars, eigenvalue=ω, namespace=locals())
-
-nondim = args['--nondim']
-if nondim == 'diffusion':
-    P = 1                      #  diffusion on buoyancy. Always = 1 in this scaling.
-    S = Prandtlm               #  diffusion on moisture  k_q / k_b
-    PdR = Prandtl              #  diffusion on momentum
-    PtR = Prandtl*Rayleigh     #  Prandtl times Rayleigh = buoyancy force
-elif nondim == 'buoyancy':
-    P = (Rayleigh * Prandtl)**(-1/2)         #  diffusion on buoyancy
-    S = (Rayleigh * Prandtlm)**(-1/2)        #  diffusion on moisture
-    PdR = (Rayleigh/Prandtl)**(-1/2)         #  diffusion on momentum
-    PtR = 1
-    #tau_in /=                     # think through what this should be
-else:
-    raise ValueError('nondim {:} not in valid set [diffusion, buoyancy]'.format(nondim))
-
-tau['g'] = tau_in
-
-grad_b0 = grad(b0).evaluate()
-grad_q0 = grad(q0).evaluate()
-#
-problem.add_equation('div(u) + τp + 1/PdR*dot(lift(τu2,-1),ez) = 0')
-problem.add_equation('dt(u) - PdR*lap(u) + grad(p) - PtR*b*ez + lift(τu1, -1) + lift(τu2, -2) = 0')
-problem.add_equation('dt(b) - P*lap(b) + u@grad_b0 - γ/tau*(q-α*qs0*b)*scrN + lift(τb1, -1) + lift(τb2, -2) = 0')
-problem.add_equation('dt(q) - S*lap(q) + u@grad_q0 + 1/tau*(q-α*qs0*b)*scrN + lift(τq1, -1) + lift(τq2, -2) = 0')
-problem.add_equation('b(z=0) = 0')
-problem.add_equation('b(z=Lz) = 0')
-problem.add_equation('q(z=0) = 0')
-problem.add_equation('q(z=Lz) = 0')
-if args['--stress-free']:
-    problem.add_equation('ez@u(z=0) = 0')
-    problem.add_equation('ez@(ex@e(z=0)) = 0')
-    problem.add_equation('ez@(ey@e(z=0)) = 0')
-else:
-    problem.add_equation('u(z=0) = 0')
-if args['--top-stress-free'] or args['--stress-free']:
-    problem.add_equation('ez@u(z=Lz) = 0')
-    problem.add_equation('ez@(ex@e(z=Lz)) = 0')
-    problem.add_equation('ez@(ey@e(z=Lz)) = 0')
-else:
-    problem.add_equation('u(z=Lz) = 0')
-problem.add_equation('integ(p) = 0')
-solver = problem.build_solver()
-
-dlog = logging.getLogger('subsystems')
-dlog.setLevel(logging.WARNING)
-
-
-import matplotlib.pyplot as plt
-fig, ax = plt.subplots(ncols=2, figsize=[6,6/2])
-b0.change_scales(1)
-q0.change_scales(1)
-qs0.change_scales(1)
-p0 = ax[0].plot(b0['g'][0,0,:], z[0,0,:], label=r'$b$')
-p1 = ax[0].plot(γ*q0['g'][0,0,:], z[0,0,:], label=r'$\gamma q$')
-p2 = ax[0].plot(b0['g'][0,0,:]+γ*q0['g'][0,0,:], z[0,0,:], label=r'$m = b + \gamma q$')
-p3 = ax[0].plot(γ*qs0['g'][0,0,:], z[0,0,:], linestyle='dashed', alpha=0.3, label=r'$\gamma q_s$')
-ax2 = ax[0].twiny()
-scrN.change_scales(1)
-p4 = ax2.plot(scrN['g'][0,0,:], z[0,0,:], color='xkcd:purple grey', label=r'$\mathcal{N}(z)$')
-ax2.set_xlabel(r'$\mathcal{N}(z)$')
-ax2.xaxis.label.set_color('xkcd:purple grey')
-lines = p0 + p1 + p2 + p3 + p4
-labels = [l.get_label() for l in lines]
-ax[0].legend(lines, labels)
-ax[0].set_xlabel(r'$b$, $\gamma q$, $m$')
-ax[0].set_ylabel(r'$z$')
-#ax[1].plot(q0['g'][0,0,:]-qs0['g'][0,0,:], z[0,0,:])
-ax[1].plot(grad(b0).evaluate()['g'][-1][0,0,:], zd[0,0,:], label=r'$\nabla b$')
-ax[1].plot(grad(γ*q0).evaluate()['g'][-1][0,0,:], zd[0,0,:], label=r'$\gamma \nabla q$')
-ax[1].plot(grad(b0+γ*q0).evaluate()['g'][-1][0,0,:], zd[0,0,:], label=r'$\nabla m$')
-ax[1].set_xlabel(r'$\nabla b$, $\gamma \nabla q$, $\nabla m$')
-ax[1].legend()
-ax[1].axvline(x=0, linestyle='dashed', color='xkcd:dark grey', alpha=0.5)
-fig.savefig(case+'/evp_background.png', dpi=300)
-
-def plot_eigenfunctions(σ):
+def plot_eigenfunctions(evp, index, Rayleigh, kx):
+    evp.solver.set_state(index,0)
+    u = evp.fields['u']
+    b = evp.fields['b']
+    q = evp.fields['q']
+    σ = evp.solver.eigenvalues[index]
+    z = evp.zb.local_grid(1)[0,0,:]
+    nz = z.shape[-1]
     i_max = np.argmax(np.abs(b['g'][0,0,:]))
     phase_correction = b['g'][0,0,i_max]
     u['g'][:] /= phase_correction
@@ -276,33 +129,37 @@ def plot_eigenfunctions(σ):
     for Q in [u, q, b]:
         if Q.tensorsig:
             for i in range(3):
-                p = ax.plot(Q['g'][i][0,0,:].real, z[0,0,:], label=Q.name+r'$_'+'{:s}'.format(coords.names[i])+r'$')
-                ax.plot(Q['g'][i][0,0,:].imag, z[0,0,:], linestyle='dashed', color=p[0].get_color())
+                p = ax.plot(Q['g'][i][0,0,:].real, z, label=Q.name+r'$_'+'{:s}'.format(coords.names[i])+r'$')
+                ax.plot(Q['g'][i][0,0,:].imag, z, linestyle='dashed', color=p[0].get_color())
         else:
-            p = ax.plot(Q['g'][0,0,:].real, z[0,0,:], label=Q)
-            ax.plot(Q['g'][0,0,:].imag, z[0,0,:], linestyle='dashed', color=p[0].get_color())
-    ax.set_title(r'$\omega_R = ${:.3g}'.format(σ.real)+ r' $\omega_I = ${:.3g}'.format(σ.imag)+' at kx = {:.3g} and Ra = {:.3g}'.format(kx['g'][0,0,0].real, Rayleigh['g'][0,0,0].real))
+            p = ax.plot(Q['g'][0,0,:].real, z, label=Q)
+            ax.plot(Q['g'][0,0,:].imag, z, linestyle='dashed', color=p[0].get_color())
+    ax.set_title(r'$\omega_R = ${:.3g}'.format(σ.real)+ r' $\omega_I = ${:.3g}'.format(σ.imag)+' at kx = {:.3g} and Ra = {:.3g}'.format(kx, Rayleigh))
     ax.legend()
-    fig_filename = 'eigenfunctions_{:}_Ra{:.2g}_kx{:.2g}_nz{:d}'.format(nondim, Rayleigh['g'][0,0,0].real, kx['g'][0,0,0].real, nz)
-    fig.savefig(case+'/'+fig_filename+'.png', dpi=300)
+    fig_filename = 'eigenfunctions_{:}_Ra{:.2g}_kx{:.2g}_nz{:d}'.format(nondim, Rayleigh, kx, nz)
+    fig.savefig(evp.case_name+'/'+fig_filename+'.png', dpi=300)
+    logger.info("eigenfunctions plotted in {:s}".format(evp.case_name+'/'+fig_filename+'.png'))
 
 # fix Ra, find omega
-def compute_growth_rate(kx_i, Ra_i, target=0):
-    kx['g'] = kx_i
-    Rayleigh['g'] = Ra_i
-    if args['--dense']:
-        solver.solve_dense(solver.subproblems[0], rebuild_matrices=True)
-        solver.eigenvalues = solver.eigenvalues[np.isfinite(solver.eigenvalues)]
-    else:
-        solver.solve_sparse(solver.subproblems[0], N=N_evals, target=target, rebuild_matrices=True)
-    i_evals = np.argsort(solver.eigenvalues.real)
-    evals = solver.eigenvalues[i_evals]
+def compute_growth_rate(kx, Ra, target=0, plot_fastest_mode=False):
+    lo_res = RainyBenardEVP(nz, Ra, tau, kx, γ, α, β, q0, k, relaxation_method=relaxation_method, Legendre=Legendre, erf=erf, bc_type=bc_type, nondim=nondim, dealias=dealias,Lz=1)
+    hi_res = RainyBenardEVP(int(3*nz/2), Ra, tau, kx, γ, α, β, q0, k, relaxation_method=relaxation_method, Legendre=Legendre, erf=erf, bc_type=bc_type, nondim=nondim, dealias=dealias,Lz=1)
+    for solver in [lo_res, hi_res]:
+        if args['--dense']:
+            solver.solve(dense=True)
+        else:
+            solver.solve(dense=False, N_evals=N_evals, target=target)
+    evals_good, indx, ep = mode_reject(lo_res, hi_res, plot_drift_ratios=False)
+
+    i_evals = np.argsort(evals_good.real)
+    evals = evals_good[i_evals]
     peak_eval = evals[-1]
     # choose convention: return the positive complex mode of the pair
     if peak_eval.imag < 0:
         peak_eval = np.conj(peak_eval)
-    # set solver state to peak eigenmode, in case we wish to plot it
-    solver.set_state(i_evals[-1],0)
+
+    if plot_fastest_mode:
+        plot_eigenfunctions(lo_res, indx[-1], Ra, kx)
     return peak_eval
 
 def peak_growth_rate(*args):
@@ -310,27 +167,33 @@ def peak_growth_rate(*args):
     # flip sign so minimize finds maximum
     return -1*rate.real
 
-
 growth_rates = {}
 Ras = np.geomspace(float(args['--min_Ra']),float(args['--max_Ra']),num=int(float(args['--num_Ra'])))
-kxs = np.logspace(-1, 1.5, num=50)
+kxs = np.geomspace(min_kx, max_kx, num=nkx)
 print(Ras)
-for Ra_i in Ras:
+for Ra in Ras:
     σ = []
     # reset to base target for each Ra loop
     target = float(args['--target'])
-    for kx_i in kxs:
-        σ_i = compute_growth_rate(kx_i, Ra_i, target=target)
+    kx = kxs[0]
+    lo_res = RainyBenardEVP(nz, Ra, tau, kx, γ, α, β, q0, k, relaxation_method=relaxation_method, Legendre=Legendre, erf=erf, bc_type=bc_type, nondim=nondim, dealias=dealias,Lz=1)
+    lo_res.plot_background()
+    hi_res = RainyBenardEVP(int(3*nz/2), Ra, tau, kx, γ, α, β, q0, k, relaxation_method=relaxation_method, Legendre=Legendre, erf=erf, bc_type=bc_type, nondim=nondim, dealias=dealias,Lz=1)
+    hi_res.plot_background()
+    for system in ['rainy_evp']:
+         logging.getLogger(system).setLevel(logging.WARNING)
+
+    for kx in kxs:
+        σ_i = compute_growth_rate(kx, Ra, target=target)
         σ.append(σ_i)
-        logger.info('Ra = {:.2g}, kx = {:.2g}, σ = {:.2g}'.format(Ra_i, kx_i, σ_i))
+        logger.info('Ra = {:.2g}, kx = {:.2g}, σ = {:.2g}'.format(Ra, kx, σ_i))
         if σ_i.imag > 0:
             # update target if on growing branch
             target = σ_i.imag
-    growth_rates[Ra_i] = np.array(σ)
+    σ = np.array(σ)
+    growth_rates[Ra] = {'σ':σ, 'max σ.real':σ[np.argmax(σ.real)]}
 
-import matplotlib.pyplot as plt
 fig, ax = plt.subplots(figsize=[6,6/1.6])
-peak_σ = -np.inf
 
 if nondim == 'diffusion':
     ax2 = ax.twinx()
@@ -341,12 +204,11 @@ if nondim == 'diffusion':
     ax2.set_ylabel(r'$\omega_I$ (dashed)')
 elif nondim == 'buoyancy':
     ax2 = ax
-    ax.set_ylim(-0.05, 0.025)
+    ax.set_ylim(-0.5, 0.5)
     ax.set_ylabel(r'$\omega_R$ (solid), $\omega_I$ (dashed)')
 
 for Ra in growth_rates:
-    σ = growth_rates[Ra]
-    peak_σ = max(peak_σ, np.max(σ))
+    σ = growth_rates[Ra]['σ']
     p = ax.plot(kxs, σ.real, label='Ra = {:.2g}'.format(Ra))
     ax2.plot(kxs, σ.imag, linestyle='dashed', color=p[0].get_color())
 ax.set_xscale('log')
@@ -360,60 +222,81 @@ if args['--dense']:
     fig_filename += '_dense'
 ax.legend()
 ax.axhline(y=0, linestyle='dashed', color='xkcd:grey', alpha=0.5)
-ax.set_title(r'$\gamma$ = {:}, $\beta$ = {:}, $\tau$ = {:}'.format(γ,β,tau['g'][0,0,0]))
+ax.set_title(r'$\gamma$ = {:}, $\beta$ = {:}, $\tau$ = {:}'.format(γ,β,tau))
 ax.set_xlabel('$k_x$')
 ax.set_title('{:} timescales'.format(nondim))
-fig.savefig(case+'/'+fig_filename+'.png', dpi=300)
+fig.savefig(lo_res.case_name+'/'+fig_filename+'.png', dpi=300)
 
-
+for system in ['rainy_evp']:
+     logging.getLogger(system).setLevel(logging.WARNING)
 
 import scipy.optimize as sciop
 bounds = sciop.Bounds(lb=1, ub=10)
+def find_continous_peak(Ra, kx, plot_fastest_mode=False):
 
-peaks = {'σ':[], 'k':[], 'Ra':[]}
-for Ra in growth_rates:
-    σ = growth_rates[Ra]
-    peak_i = np.argmax(σ)
-    kx_i = kxs[peak_i]
-    result = sciop.minimize(peak_growth_rate, kx_i, args=(Ra), bounds=bounds, method='Nelder-Mead', tol=1e-5)
+    result = sciop.minimize(peak_growth_rate, kx, args=(Ra), bounds=bounds, method='Nelder-Mead', tol=1e-5)
     # obtain full complex rate
-    σ = compute_growth_rate(result.x[0], Ra)
-    logger.info('peak search: start at Ra = {:.4g}, kx = {:.4g}, found σ_max = {:.2g},{:.2g}i, kx = {:.4g}'.format(Ra, kx_i, σ.real, σ.imag, result.x[0]))
-    peaks['σ'].append(σ)
-    peaks['k'].append(result.x[0])
-    peaks['Ra'].append(Ra)
-    plot_eigenfunctions(σ)
+    σ = compute_growth_rate(result.x[0], Ra, plot_fastest_mode=plot_fastest_mode)
+    return result.x[0], σ
 
-for key in ['σ', 'k', 'Ra']:
-    peaks[key] = np.array(peaks[key])
+# find Ra bracket
+σ_re = -np.inf
+lower_Ra = None
+upper_Ra = None
+for Ra in growth_rates:
+    σ_re = growth_rates[Ra]['max σ.real']
+    if σ_re < 0:
+        lower_Ra = Ra
+    else:
+        upper_Ra = Ra
+        break
+if not lower_Ra or not upper_Ra:
+    raise ValueError("Sampled Rayleigh numbers do not bound instability (lower: {:}, upper: {:})".format(lower_Ra, upper_Ra))
 
-from scipy.interpolate import interp1d
-f_σR_i = interp1d(peaks['σ'].real, peaks['k']) #inverse
-f_σR = interp1d(peaks['k'], peaks['σ'].real)
-f_σI_i = interp1d(peaks['σ'].imag, peaks['k']) #inverse
-f_σI = interp1d(peaks['k'], peaks['σ'].imag)
+# find peak growth rates of bracket
+peaks = {}
+for Ra in [lower_Ra, upper_Ra]:
+    σ = growth_rates[Ra]['σ']
+    peak_i = np.argmax(σ.real)
+    kx0 = kxs[peak_i] # initial guess
+    kx, σ = find_continous_peak(Ra, kx0)
+    peaks[Ra] = {'σ':σ, 'k':kx}
 
-# to find critical Ra
-f_σR_Ra_i = interp1d(peaks['σ'].real, peaks['Ra'])
-f_σ_Ra = interp1d(peaks['Ra'], peaks['σ'])
-f_k_Ra = interp1d(peaks['Ra'], peaks['k'])
+# conduct a bracketing search with interpolation to find critical Ra
+σ = np.inf
+tol = float(args['--tol_crit_Ra'])
+iter = 0
+max_iter = 15
+while np.abs(σ.real) > tol and iter < max_iter:
+    σs = np.array([peaks[lower_Ra]['σ'], peaks[upper_Ra]['σ']])
+    ks = np.array([peaks[lower_Ra]['k'], peaks[upper_Ra]['k']])
+    ln_Ras = np.log(np.array([lower_Ra, upper_Ra]))
+    # do this in log Ra
+    ln_crit_Ra = np.interp(0, σs.real, ln_Ras)
+    crit_k = np.interp(ln_crit_Ra, ln_Ras, ks)
+    crit_σ = np.interp(ln_crit_Ra, ln_Ras, σs)
+    crit_Ra = np.exp(ln_crit_Ra)
 
-peak_ks = np.geomspace(np.min(peaks['k']), np.max(peaks['k']))
+    logger.info('Critical point, based on interpolation:')
+    logger.info('Ra = {:.3g}, k = {:}'.format(crit_Ra, crit_k))
 
-crit_Ra = f_σR_Ra_i(0)
-crit_k = f_k_Ra(crit_Ra)
-crit_σ = f_σ_Ra(crit_Ra)
-logger.info('Critical point, based on interpolation:')
-logger.info('Ra = {:}, k = {:}'.format(crit_Ra, crit_k))
-logger.info('σ = {:}, {:}i'.format(crit_σ.real, crit_σ.imag))
+    kx, σ = find_continous_peak(crit_Ra, crit_k, plot_fastest_mode=True)
+    logger.info('σ = {:.2g}, {:.2g}i (calculated) at k = {:}'.format(σ.real, σ.imag, kx))
 
-σ = compute_growth_rate(crit_k, crit_Ra)
-plot_eigenfunctions(σ)
-logger.info('σ = {:}, {:}i'.format(crit_σ.real, crit_σ.imag))
-logger.info('σ = {:}, {:}i (sigma)'.format(σ.real, σ.imag))
+    if σ.real > 0:
+        upper_Ra = crit_Ra
+    else:
+        lower_Ra = crit_Ra
+    if not crit_Ra in peaks:
+        peaks[crit_Ra] = {'σ':σ, 'k':kx}
+    crit_k = kx
+    iter+=1
 
-ax.plot(peak_ks, f_σR(peak_ks), linestyle='dotted', color='xkcd:grey')
-ax.scatter(crit_k, crit_σ.real, color='xkcd:grey', marker='x')
+logger.info("critical Ra found after {:d} iterations".format(iter))
+
+for Ra in peaks:
+    ax.scatter(peaks[Ra]['k'], peaks[Ra]['σ'].real, color='xkcd:grey', marker='x', alpha=0.5)
+
 ax.scatter(crit_k, σ.real, color='xkcd:pink', marker='o', alpha=0.5)
 
 fig_filename = 'growth_curves_peaks_{:}_nz{:d}'.format(nondim, nz)
@@ -423,4 +306,32 @@ if args['--top-stress-free']:
     fig_filename += '_TSF'
 if args['--dense']:
     fig_filename += '_dense'
-fig.savefig(case+'/'+fig_filename+'.png', dpi=300)
+fig.savefig(lo_res.case_name+'/'+fig_filename+'.png', dpi=300)
+logger.info("peaks plotted in {:}".format(lo_res.case_name+'/'+fig_filename+'.png'))
+
+f_curves = lo_res.case_name+'/critical_curves_nz_{:d}.h5'.format(nz)
+with h5py.File(f_curves,'w') as f:
+    f['α'] = α
+    f['β'] = β
+    f['γ'] = γ
+    f['q0'] = q0
+    f['tau'] = tau
+    f['k_q'] = k
+    f['nz'] = nz
+    # critical value
+    f['crit/Ra'] = crit_Ra
+    f['crit/k'] = crit_k
+    f['crit/σ'] = peaks[crit_Ra]['σ']
+    f['crit/iter'] = iter
+    f['crit/max_iter'] = max_iter
+    f['crit/tol'] = tol
+    for i, Ra in enumerate(peaks):
+        f[f'peaks/{i:d}/Ra'] = Ra
+        f[f'peaks/{i:d}/k'] = peaks[Ra]['k']
+        f[f'peaks/{i:d}/σ'] = peaks[Ra]['σ']
+    for Ra in growth_rates:
+        f[f'curves/{Ra:.4e}/Ra'] = Ra
+        f[f'curves/{Ra:.4e}/k'] = kxs
+        f[f'curves/{Ra:.4e}/σ'] = growth_rates[Ra]['σ']
+    f.close()
+logger.info("Critical curves written out to: {:}".format(f_curves))

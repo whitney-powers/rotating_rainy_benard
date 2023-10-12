@@ -14,6 +14,12 @@ Usage:
 Options:
     <case>            Case to build IVP around
 
+                      Properties of analytic atmosphere, if used
+    --alpha=<alpha>   alpha value [default: 3]
+    --beta=<beta>     beta value  [default: 1.1]
+    --gamma=<gamma>   gamma value [default: 0.19]
+    --q0=<q0>         basal q value [default: 0.6]
+
     --Rayleigh=<Ra>   Rayleigh number [default: 1e5]
 
     --aspect=<a>      Aspect ratio of domain, Lx/Lz [default: 10]
@@ -23,7 +29,6 @@ Options:
 
     --erf             Use an erf rather than a tanh for the phase transition
     --Legendre        Use Legendre polynomials
-
 
     --nondim=<n>      Non-Nondimensionalization [default: buoyancy]
 
@@ -38,6 +43,8 @@ Options:
     --run_time_diff=<rtd>      Run time, in diffusion times [default: 1]
     --run_time_buoy=<rtb>      Run time, in buoyancy times
     --run_time_iter=<rti>      Run time, number of iterations; if not set, n_iter=np.inf
+
+    --no-output       Suppress disk writing output, for timing
 
     --label=<label>   Label to add to output directory
 """
@@ -73,18 +80,25 @@ if case == 'analytic':
 
     from analytic_zc import f_zc as zc_analytic
     from analytic_zc import f_Tc as Tc_analytic
-    α = 3
-    β = 1.1
-    γ = 0.19
+    α = float(args['--alpha'])
+    β = float(args['--beta'])
+    γ = float(args['--gamma'])
     k = float(args['--k'])
+    q0 = float(args['--q0'])
     tau = float(args['--tau'])
 
-    case += '_unsaturated/alpha{:}_beta{:}_gamma{:}/tau{:}_k{:}'.format(α,β,γ,args['--tau'],args['--k'])
+    if q0 < 1:
+        atm_name = 'unsaturated'
+    elif q0 == 1:
+        atm_name = 'saturated'
+    else:
+        raise ValueError("q0 has invalid value, q0 = {:}".format(q0))
+
+    case += '_{:s}/alpha{:}_beta{:}_gamma{:}_q{:}'.format(atm_name, args['--alpha'],args['--beta'],args['--gamma'], args['--q0'])
+
+    case += '/tau{:}_k{:}'.format(args['--tau'],args['--k'])
     if args['--erf']:
         case += '_erf'
-    sol = analytic_atmosphere.unsaturated
-    zc = zc_analytic()(γ)
-    Tc = Tc_analytic()(γ)
 
     nz = int(float(args['--nz']))
     if args['--Legendre']:
@@ -93,14 +107,23 @@ if case == 'analytic':
     else:
         zb = de.ChebyshevT(coords.coords[2], size=nz, bounds=(0, Lz), dealias=dealias)
 
-    sol = sol(dist, zb, β, γ, zc, Tc, dealias=dealias, q0=0.6, α=α)
+    if atm_name == 'unsaturated':
+        sol = analytic_atmosphere.unsaturated
+        zc = zc_analytic()(γ)
+        Tc = Tc_analytic()(γ)
+
+        sol = sol(dist, zb, β, γ, zc, Tc, dealias=dealias, q0=q0, α=α)
+    elif atm_name == 'saturated':
+        sol = analytic_atmosphere.saturated
+        sol = sol(dist, zb, β, γ, dealias=dealias, q0=q0, α=α)
+
     sol['b'].change_scales(1)
     sol['q'].change_scales(1)
     sol['b'] = sol['b']['g']
     sol['q'] = sol['q']['g']
     sol['z'].change_scales(1)
     nz_sol = sol['z']['g'].shape[-1]
-    if not os.path.exists('{:s}/'.format(case)):
+    if not os.path.exists('{:s}/'.format(case)) and dist.comm.rank == 0:
         os.makedirs('{:s}/'.format(case))
 else:
     f = h5py.File(case+'/drizzle_sol/drizzle_sol_s1.h5', 'r')
@@ -137,6 +160,7 @@ if args['--label']:
 import dedalus.tools.logging as dedalus_logging
 dedalus_logging.add_file_handler(data_dir+'/logs/dedalus_log', 'DEBUG')
 
+logger.info('saving data to: {:}'.format(data_dir))
 logger.info('α={:}, β={:}, γ={:}, tau={:}, k={:}'.format(α,β,γ,tau, k))
 
 Prandtlm = 1
@@ -273,7 +297,7 @@ noise = dist.Field(name='noise', bases=bases)
 noise.fill_random('g', seed=42, distribution='normal', scale=amp) # Random noise
 noise.low_pass_filter(scales=0.75)
 
-# noise ICs in moisture
+# noise ICs in buoyancy
 b0.change_scales(1)
 q0.change_scales(1)
 b['g'] = b0['g']
@@ -295,8 +319,9 @@ cfl.add_velocity(u)
 
 report_cadence = 1e2
 
+vol = Lx*Lz
 integ = lambda A: de.Integrate(de.Integrate(A, 'x'), 'z')
-avg = lambda A: integ(A)/(Lx*Lz)
+avg = lambda A: integ(A)/vol
 x_avg = lambda A: de.Integrate(A, 'x')/(Lx)
 
 Re = np.sqrt(u@u)/PdR
@@ -306,46 +331,52 @@ QE = PtR*γ*q
 ME = PE + QE # moist static energy
 Q_eq = (q-qs)*H(q - qs)
 
-snap_dt = 10
-snapshots = solver.evaluator.add_file_handler(data_dir+'/snapshots', sim_dt=snap_dt, max_writes=20)
-snapshots.add_task(b, name='b')
-snapshots.add_task(q, name='q')
-snapshots.add_task(b-x_avg(b), name='b_fluc')
-snapshots.add_task(q-x_avg(q), name='q_fluc')
-snapshots.add_task(rh, name='rh')
-snapshots.add_task(rh-x_avg(rh), name='rh_fluc')
-snapshots.add_task(ex@u, name='ux')
-snapshots.add_task(ez@u, name='uz')
-snapshots.add_task(ey@ω, name='vorticity')
-snapshots.add_task(ω@ω, name='enstrophy')
-snapshots.add_task(x_avg(b), name='b_avg')
-snapshots.add_task(x_avg(q), name='q_avg')
-snapshots.add_task(x_avg(b+γ*q), name='m_avg')
-snapshots.add_task(x_avg(rh), name='rh_avg')
-snapshots.add_task(x_avg(Q_eq), name='Q_eq_avg')
-snapshots.add_task(x_avg(ez@u*q), name='uq_avg')
-snapshots.add_task(x_avg(ez@u*b), name='ub_avg')
-snapshots.add_task(x_avg(ex@u), name='ux_avg')
-snapshots.add_task(x_avg(ez@u), name='uz_avg')
-snapshots.add_task(x_avg(np.sqrt((u-x_avg(u))@(u-x_avg(u)))), name='u_rms')
+if not args['--no-output']:
+    snap_dt = 10
+    snapshots = solver.evaluator.add_file_handler(data_dir+'/snapshots', sim_dt=snap_dt, max_writes=20)
+    snapshots.add_task(b, name='b')
+    snapshots.add_task(q, name='q')
+    snapshots.add_task(b+γ*q, name='m')
+    snapshots.add_task(Q_eq, name='c')
+    snapshots.add_task(b-x_avg(b), name='b_fluc')
+    snapshots.add_task(q-x_avg(q), name='q_fluc')
+    snapshots.add_task(rh, name='rh')
+    snapshots.add_task(rh-x_avg(rh), name='rh_fluc')
+    snapshots.add_task(ex@u, name='ux')
+    snapshots.add_task(ez@u, name='uz')
+    snapshots.add_task(ey@ω, name='vorticity')
+    snapshots.add_task(ω@ω, name='enstrophy')
 
+    averages = solver.evaluator.add_file_handler(data_dir+'/averages', sim_dt=snap_dt, max_writes=None)
+    averages.add_task(x_avg(b), name='b')
+    averages.add_task(x_avg(q), name='q')
+    averages.add_task(x_avg(b+γ*q), name='m')
+    averages.add_task(x_avg(rh), name='rh')
+    averages.add_task(x_avg(Q_eq), name='Q_eq')
+    averages.add_task(x_avg(ez@u*q), name='uq')
+    averages.add_task(x_avg(ez@u*b), name='ub')
+    averages.add_task(x_avg(ex@u), name='ux')
+    averages.add_task(x_avg(ez@u), name='uz')
+    averages.add_task(x_avg(np.sqrt((u-x_avg(u))@(u-x_avg(u)))), name='u_rms')
+    averages.add_task(x_avg(ω@ω), name='enstrophy')
+    averages.add_task(x_avg((ω-x_avg(ω))@(ω-x_avg(ω))), name='enstrophy_rms')
 
-trace_dt = snap_dt/5
-traces = solver.evaluator.add_file_handler(data_dir+'/traces', sim_dt=trace_dt, max_writes=None)
-traces.add_task(avg(KE), name='KE')
-traces.add_task(avg(PE), name='PE')
-traces.add_task(avg(QE), name='QE')
-traces.add_task(avg(ME), name='ME')
-traces.add_task(avg(Q_eq), name='Q_eq')
-traces.add_task(avg(Re), name='Re')
-traces.add_task(avg(ω@ω), name='enstrophy')
-traces.add_task(x_avg(np.sqrt(τu1@τu1)), name='τu1')
-traces.add_task(x_avg(np.sqrt(τu2@τu2)), name='τu2')
-traces.add_task(x_avg(np.abs(τb1)), name='τb1')
-traces.add_task(x_avg(np.abs(τb2)), name='τb2')
-traces.add_task(x_avg(np.abs(τq1)), name='τq1')
-traces.add_task(x_avg(np.abs(τq2)), name='τq2')
-traces.add_task(np.abs(τp), name='τp')
+    trace_dt = snap_dt/5
+    traces = solver.evaluator.add_file_handler(data_dir+'/traces', sim_dt=trace_dt, max_writes=None)
+    traces.add_task(avg(KE), name='KE')
+    traces.add_task(avg(PE), name='PE')
+    traces.add_task(avg(QE), name='QE')
+    traces.add_task(avg(ME), name='ME')
+    traces.add_task(avg(Q_eq), name='Q_eq')
+    traces.add_task(avg(Re), name='Re')
+    traces.add_task(avg(ω@ω), name='enstrophy')
+    traces.add_task(x_avg(np.sqrt(τu1@τu1)), name='τu1')
+    traces.add_task(x_avg(np.sqrt(τu2@τu2)), name='τu2')
+    traces.add_task(x_avg(np.abs(τb1)), name='τb1')
+    traces.add_task(x_avg(np.abs(τb2)), name='τb2')
+    traces.add_task(x_avg(np.abs(τq1)), name='τq1')
+    traces.add_task(x_avg(np.abs(τq2)), name='τq2')
+    traces.add_task(np.abs(τp), name='τp')
 
 
 flow = flow_tools.GlobalFlowProperty(solver, cadence=report_cadence)
@@ -358,8 +389,6 @@ flow.add_property(np.abs(τb2), name='|τb2|')
 flow.add_property(np.abs(τq1), name='|τq1|')
 flow.add_property(np.abs(τq2), name='|τq2|')
 flow.add_property(np.abs(τp), name='|τp|')
-
-vol = Lx*Lz
 
 good_solution = True
 KE_avg = 0

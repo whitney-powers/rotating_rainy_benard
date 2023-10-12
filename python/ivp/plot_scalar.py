@@ -47,13 +47,13 @@ if args['--times']:
 else:
     subrange = False
 
-energy_keys = ['KE','PE','QE']
+energy_keys = ['KE','PE','QE','ME']
 
 fig_E, ax_E = plt.subplots(nrows=2, sharex=True)
 for key in energy_keys:
     ax_E[0].plot(t, data[key], label=key)
-for key in energy_keys[::2]: # skip PE
-    ax_E[1].plot(t, data[key], label=key)
+for key in ['KE', 'ME']:
+    ax_E[1].plot(t, data[key]-data[key][0], label=key+"'")
 
 for ax in ax_E:
     if subrange:
@@ -118,8 +118,14 @@ for ax in ax_f:
     if subrange:
         ax.set_xlim(t_min,t_max)
     ax.set_xlabel('time')
-    ax.set_ylabel('fluid parameters')
-    ax.legend(loc='lower left')
+    ax.set_ylabel('Re')
+    ax_r.set_ylabel(r"$\omega^2$")
+
+handles_re, labels_re = ax.get_legend_handles_labels()
+handles_ens, labels_ens = ax_r.get_legend_handles_labels()
+handles = handles_re + handles_ens
+labels = labels_re + labels_ens
+ax.legend(handles,labels)
 
 ax_f[1].set_yscale('log')
 ax_r.set_yscale('log') # relies on it being the last instance; poor practice

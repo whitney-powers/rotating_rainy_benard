@@ -18,7 +18,7 @@ Options:
     --alpha=<alpha>   alpha value [default: 3]
     --beta=<beta>     beta value  [default: 1.1]
     --gamma=<gamma>   gamma value [default: 0.19]
-    --q0=<q0>         basal q value [default: 0.6]
+    --q0=<q0>         basal q value [default: 1]
 
     --Taylor=<Ta>     Taylor number [default: 0]
     --theta=<theta>   Inclination of rotation axis from z [default: 0]
@@ -318,7 +318,7 @@ theta = float(args['--theta'])
 Omega = OmegaMag * (np.cos(theta)*ez + np.sin(theta)*ey)
 
 if Taylor==0:
-     Coriolis=0
+     Coriolis = 0
 else:
      Coriolis = 2*cross(Omega,u)
 problem.add_equation('div(u) + τp + 1/PdR*dot(lift(τu2,-1),ez) = 0')
@@ -386,6 +386,11 @@ PE = PtR*b
 QE = PtR*γ*q
 ME = PE + QE # moist static energy
 Q_eq = (q-qs)*H(q - qs)
+m = b+γ*q
+Nu_m = 1 + (xy_avg(w*m)/(-P*(beta-1)-gamma*S*(exp(alpha*-1)-1))) # assuming Delta T = 1
+Rossby_vort = np.sqrt(ω@ω)/(2*Omega)
+Rossby_vort_z = np.sqrt(ez@ω**2)/(2*Omega)
+Rossby_bulk = u_rms/(2*Omega*Lz)
 
 if not args['--no-output']:
     snap_dt = 5
@@ -446,7 +451,12 @@ if not args['--no-output']:
     traces.add_task(xy_avg(np.abs(τq1)), name='τq1')
     traces.add_task(xy_avg(np.abs(τq2)), name='τq2')
     traces.add_task(np.abs(τp), name='τp')
-
+    traces.add_task(avg(Nu_m), name='Nu_m')
+    if Taylor > 0:
+         traces.add_task(avg(Rossby_bulk), name='Rossby_bulk')
+         traces.add_task(avg(Rossby_vort), name='Rossby_vort')
+         traces.add_task(avg(Rossby_vort_z), name='Rossby_vort_z')
+    
     checkpoint_wall_dt = 3.9*3600 # trigger slightly before a 4 hour interval
     checkpoints = solver.evaluator.add_file_handler(data_dir+'/checkpoints', wall_dt=checkpoint_wall_dt, max_writes=1)
     #checkpoints.add_system(solver.state)

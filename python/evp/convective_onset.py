@@ -16,7 +16,7 @@ Options:
     --alpha=<alpha>   alpha value [default: 3]
     --beta=<beta>     beta value  [default: 1.1]
     --gamma=<gamma>   gamma value [default: 0.19]
-    --q0=<q0>         basal q value [default: 0.6]
+    --q0=<q0>         basal q value [default: 1]
 
     --tau=<tau>       If set, override value of tau
     --k=<k>           If set, override value of k

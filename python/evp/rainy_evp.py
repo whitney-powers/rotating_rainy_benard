@@ -196,7 +196,7 @@ class RainyBenardEVP():
         γ = self.γ
         α = self.α
         β = self.β
-        tau = self.tau
+        
 
         T0 = self.b0 - β*z_grid
         qs0 = np.exp(α*T0)#.evaluate()
@@ -215,9 +215,12 @@ class RainyBenardEVP():
             PdR = (self.Rayleigh/self.Prandtl)**(-1/2)         #  diffusion on momentum
             PtR = 1
             #tau_in /=                     # think through what this should be
+            # using tau/=P so that tau is a fixed value in thermal timescales
+            # Just using tau here means that tau is a fixed value in buoyancy timescales
         else:
             raise ValueError('nondim {:} not in valid set [diffusion, buoyancy]'.format(nondim))
 
+        tau = self.tau / P
         if self.erf:
             H = lambda A: 0.5*(1+erf(self.k*A))
         else:

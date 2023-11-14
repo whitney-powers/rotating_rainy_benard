@@ -16,7 +16,7 @@ from analytic_zc import f_zc as zc_analytic
 from analytic_zc import f_Tc as Tc_analytic
 
 class RainyBenardEVP():
-    def __init__(self, nz, Ra, tau_in, kx_in, γ, α, β, lower_q0, k, atmosphere=None, relaxation_method=None, Legendre=True, erf=True, nondim='buoyancy', bc_type=None, Prandtl=1, Prandtlm=1, Lz=1, dealias=3/2, dtype=np.complex128, twoD=True):
+    def __init__(self, nz, Ra, tau_in, kx_in, γ, α, β, lower_q0, k, atmosphere=None, relaxation_method=None, Legendre=True, erf=True, nondim='buoyancy', bc_type=None, Prandtl=1, Prandtlm=1, Lz=1, dealias=3/2, dtype=np.complex128, twoD=True, Taylor=0, theta=0):
         logger.info('Ra = {:}, kx = {:}, α={:}, β={:}, γ={:}, tau={:}, k={:}'.format(Ra,kx_in,α,β,γ,tau_in, k))
         self.nz = nz
         self.Lz = Lz
@@ -31,7 +31,9 @@ class RainyBenardEVP():
 
         self.Prandtl = Prandtl
         self.Prandtlm = Prandtlm
-
+        self.Taylor = Taylor
+        self.theta = theta
+        
         self.twoD = twoD
         if self.twoD:
             self.coords = de.CartesianCoordinates('x', 'z')
@@ -78,7 +80,7 @@ class RainyBenardEVP():
         else:
             raise ValueError("lower q0 has invalid value, q0 = {:}".format(self.lower_q0))
 
-        self.case_name = 'analytic_{:s}/alpha{:1.0f}_beta{:}_gamma{:}_q{:1.1f}'.format(atm_name, self.α,self.β,self.γ, self.lower_q0)
+        self.case_name = 'analytic_{:s}/alpha{:1.0f}_beta{:}_gamma{:}_Ta{:.2g}_q{:1.1f}'.format(atm_name, self.α,self.β,self.γ, self.Taylor, self.lower_q0)
 
         self.case_name += '/tau{:}_k{:.3e}_relaxation_{:}'.format(self.tau['g'].squeeze().real,self.k,self.relaxation_method)
         if self.erf:
@@ -159,6 +161,7 @@ class RainyBenardEVP():
 
         trans = lambda A: de.TransposeComponents(A)
 
+        cross = lambda A,B: de.cross(A,B)
         z = self.zb.local_grid(1)
         zd = self.zb.local_grid(self.dealias)
 
@@ -209,17 +212,27 @@ class RainyBenardEVP():
             S = self.Prandtlm               #  diffusion on moisture  k_q / k_b
             PdR = self.Prandtl              #  diffusion on momentum
             PtR = self.Prandtl*self.Rayleigh     #  Prandtl times Rayleigh = buoyancy force
+            OmegaMag = 1/2*self.Taylor**(1/2)*PdR   
         elif self.nondim == 'buoyancy':
             P = (self.Rayleigh * self.Prandtl)**(-1/2)         #  diffusion on buoyancy
             S = (self.Rayleigh * self.Prandtlm)**(-1/2)        #  diffusion on moisture
             PdR = (self.Rayleigh/self.Prandtl)**(-1/2)         #  diffusion on momentum
             PtR = 1
+            OmegaMag = 1/2*self.Taylor**(1/2)*PdR   
             #tau_in /=                     # think through what this should be
             # using tau/=P so that tau is a fixed value in thermal timescales
             # Just using tau here means that tau is a fixed value in buoyancy timescales
         else:
             raise ValueError('nondim {:} not in valid set [diffusion, buoyancy]'.format(nondim))
-
+        # Define rotation vector, rotation vector is always in the yz plane                                                                                                                                                                                       
+        
+        Omega = OmegaMag * (np.cos(self.theta)*ez + np.sin(self.theta)*ey)
+        
+        if self.Taylor==0:
+            Coriolis = 0
+        else:
+            Coriolis = 2*cross(Omega,u)
+        
         tau = self.tau / P
         if self.erf:
             H = lambda A: 0.5*(1+erf(self.k*A))
@@ -284,7 +297,7 @@ class RainyBenardEVP():
 
         self.problem = de.EVP(variables, eigenvalue=ω, namespace=locals())
         self.problem.add_equation('div(u) + τp + 1/PdR*dot(lift(τu2,-1),ez) = 0')
-        self.problem.add_equation('dt(u) - PdR*lap(u) + grad(p) - PtR*b*ez + lift(τu1, -1) + lift(τu2, -2) = 0')
+        self.problem.add_equation('dt(u) - PdR*lap(u) + grad(p) - PtR*b*ez + lift(τu1, -1) + lift(τu2, -2) + Coriolis = 0')
         self.problem.add_equation('dt(b) - P*lap(b) + u@grad_b0 - γ/tau*(q-α*qs0*b)*scrN + lift(τb1, -1) + lift(τb2, -2) = 0')
         self.problem.add_equation('dt(q) - S*lap(q) + u@grad_q0 + 1/tau*(q-α*qs0*b)*scrN + lift(τq1, -1) + lift(τq2, -2) = 0')
         self.problem.add_equation('b(z=0) = 0')

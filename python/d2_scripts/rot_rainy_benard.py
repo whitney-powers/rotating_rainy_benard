@@ -119,7 +119,7 @@ nondim = args['--nondim']
 if nondim == 'RB':
     #  RB diffusive scaling
     Pval = 1                      #  diffusion on buoyancy. Always = 1 in this scaling.
-    Sval = 1                      #  diffusion on moisture  k_q / k_b
+    Sval = 1                      #  diffusion on moisture  k_q / k_b (WP: I think this is wrong if Prandtlm != Prandtl, fortunately I've been lucky and run this with Pr=Prm=1)
     PdRval = Prandtl              #  diffusion on momentum
     PtRval = Prandtl * Rayleigh   #  Prandtl times Rayleigh = buoyancy force
     t_therm = 1/Pval              #  thermal diffusion timescale, always = 1 in this scaling
@@ -390,7 +390,8 @@ if threeD:
     slices.add_task('interp(vorticity_x, z=0.5)', name='x vorticity midplane')
     slices.add_task('interp(vorticity_y, z=0.5)', name='y vorticity midplane')
     slices.add_task('interp(vorticity_z, z=0.5)', name='z vorticity midplane')
-
+    slices.add_task('interp(p, z = 0.5)', name='p midplane')
+    
     slices.add_task('interp(b, z = 0.8)', name='b z.8')
     slices.add_task('interp(u, z = 0.8)', name='u z.8')
     slices.add_task('interp(v, z = 0.8)', name='v z.8')
@@ -401,7 +402,8 @@ if threeD:
     slices.add_task('interp(vorticity_x, z=0.8)', name='x vorticity z.8')
     slices.add_task('interp(vorticity_y, z=0.8)', name='y vorticity z.8')
     slices.add_task('interp(vorticity_z, z=0.8)', name='z vorticity z.8')
-
+    slices.add_task('interp(p, z = 0.8)', name='p z.8')
+    
     
     slices.add_task('interp(b, z = 0.9)', name='b z.9')
     slices.add_task('interp(u, z = 0.9)', name='u z.9')
@@ -413,7 +415,19 @@ if threeD:
     slices.add_task('interp(vorticity_x, z=0.9)', name='x vorticity z.9')
     slices.add_task('interp(vorticity_y, z=0.9)', name='y vorticity z.9')
     slices.add_task('interp(vorticity_z, z=0.9)', name='z vorticity z.9')
+    slices.add_task('interp(p, z = 0.9)', name='p z.9')
 
+    slices.add_task('interp(b, z = 0.1)', name='b z.1')
+    slices.add_task('interp(u, z = 0.1)', name='u z.1')
+    slices.add_task('interp(v, z = 0.1)', name='v z.1')
+    slices.add_task('interp(w, z = 0.1)', name='w z.1')
+    slices.add_task('interp(temp, z = 0.1)', name='temp z.1')
+    slices.add_task('interp(q, z = 0.1)', name='q z.1')
+    slices.add_task('interp(rh, z = 0.1)', name='rh z.1')
+    slices.add_task('interp(vorticity_x, z=0.1)', name='x vorticity z.1')
+    slices.add_task('interp(vorticity_y, z=0.1)', name='y vorticity z.1')
+    slices.add_task('interp(vorticity_z, z=0.1)', name='z vorticity z.1')
+    slices.add_task('interp(p, z = 0.1)', name='p z.1')
     
     
     slices.add_task('interp(b, x = 0)', name='b vertical')
@@ -426,7 +440,8 @@ if threeD:
     slices.add_task('interp(vorticity_x, x=0)', name='x vorticity vertical')
     slices.add_task('interp(vorticity_y, x=0)', name='y vorticity vertical')
     slices.add_task('interp(vorticity_z, x=0)', name='z vorticity vertical')
-
+    slices.add_task('interp(p, x = 0)', name='p vertical')
+    
 else:
     slices.add_task('b', name='b vertical')
     slices.add_task('u', name='u vertical')
@@ -448,6 +463,11 @@ profiles.add_task('plane_avg(w)', name='w')
 profiles.add_task('plane_avg(q)', name='q')
 profiles.add_task('plane_avg(rh)', name='rh')
 profiles.add_task('plane_avg(temp)', name='temp')
+profiles.add_task('plane_avg(w*b)', name='advecteve thermal flux')
+profiles.add_task('plane_avg(gamma*w*q)', name='advective moisture flux')
+profiles.add_task('plane_avg(w*m)', name='advective MSE flux')
+profiles.add_task('plane_avg(P*bz)', name='diffusive thermal flux')
+profiles.add_task('plane_avg(S*gamma*qz)', name='diffusive moisture flux')
 analysis_tasks.append(profiles)
 timeseries = solver.evaluator.add_file_handler(os.path.join(data_dir, 'timeseries'), sim_dt=ts_dt)
 timeseries.add_task('vol_avg(KE)', name='KE')

@@ -1,4 +1,4 @@
-"""
+"""A
 Dedalus script for determining instability of static drizzle solutions to the Rainy-Benard system of equations.  This script computes curves of growth at discrete kx, scanning a variety of Rayleigh numbers.
 
 Read more about these equations in:
@@ -17,6 +17,9 @@ Options:
     --beta=<beta>     beta value  [default: 1.1]
     --gamma=<gamma>   gamma value [default: 0.19]
     --q0=<q0>         basal q value [default: 1]
+
+    --Taylor=<Taylor> Taylor number [default: 0.0]
+    --theta=<theta>   Inclination angle [default: 0.0]
 
     --tau=<tau>       If set, override value of tau
     --k=<k>           If set, override value of k
@@ -82,6 +85,9 @@ min_kx = float(args['--min_kx'])
 max_kx = float(args['--max_kx'])
 nkx = int(float(args['--num_kx']))
 
+Taylor = float(args['--Taylor'])
+theta = float(args['--theta'])
+
 if args['--stress-free']:
     bc_type = 'stress-free'
 elif args['--top-stress-free']:
@@ -110,7 +116,7 @@ tau = float(args['--tau'])
 
 nz = int(float(args['--nz']))
 
-logger.info('α={:}, β={:}, γ={:}, tau={:}, k={:}'.format(α,β,γ,tau, k))
+logger.info('α={:}, β={:}, γ={:}, Taylor={:}, theta={:}, tau={:}, k={:}'.format(α,β,γ,Taylor, theta,tau, k))
 
 def plot_eigenfunctions(evp, index, Rayleigh, kx):
     evp.solver.set_state(index,0)
@@ -118,9 +124,9 @@ def plot_eigenfunctions(evp, index, Rayleigh, kx):
     b = evp.fields['b']
     q = evp.fields['q']
     σ = evp.solver.eigenvalues[index]
-    z = evp.zb.local_grid(1)[0,:]
+    z = evp.zb.local_grid(1)[0,0,:]
     nz = z.shape[-1]
-    i_max = np.argmax(np.abs(b['g'][0,:]))
+    i_max = np.argmax(np.abs(b['g'][0,0,:]))
     phase_correction = b['g'][0,i_max]
     u['g'][:] /= phase_correction
     b['g'] /= phase_correction
@@ -129,21 +135,21 @@ def plot_eigenfunctions(evp, index, Rayleigh, kx):
     for Q in [u, q, b]:
         if Q.tensorsig:
             for i in range(3):
-                p = ax.plot(Q['g'][i][0,:].real, z, label=Q.name+r'$_'+'{:s}'.format(coords.names[i])+r'$')
-                ax.plot(Q['g'][i][0,:].imag, z, linestyle='dashed', color=p[0].get_color())
+                p = ax.plot(Q['g'][i][0,0,:].real, z, label=Q.name+r'$_'+'{:s}'.format(coords.names[i])+r'$')
+                ax.plot(Q['g'][i][0,0,:].imag, z, linestyle='dashed', color=p[0].get_color())
         else:
-            p = ax.plot(Q['g'][0,:].real, z, label=Q)
-            ax.plot(Q['g'][0,:].imag, z, linestyle='dashed', color=p[0].get_color())
+            p = ax.plot(Q['g'][0,0,:].real, z, label=Q)
+            ax.plot(Q['g'][0,0,:].imag, z, linestyle='dashed', color=p[0].get_color())
     ax.set_title(r'$\omega_R = ${:.3g}'.format(σ.real)+ r' $\omega_I = ${:.3g}'.format(σ.imag)+' at kx = {:.3g} and Ra = {:.3g}'.format(kx, Rayleigh))
     ax.legend()
-    fig_filename = 'eigenfunctions_{:}_Ra{:.2g}_kx{:.2g}_nz{:d}'.format(nondim, Rayleigh, kx, nz)
+    fig_filename = 'eigenfunctions_{:}_Ra{:.2g}_Ta{:.2g}_kx{:.2g}_nz{:d}'.format(nondim, Rayleigh, Taylor, kx, nz)
     fig.savefig(evp.case_name+'/'+fig_filename+'.png', dpi=300)
     logger.info("eigenfunctions plotted in {:s}".format(evp.case_name+'/'+fig_filename+'.png'))
 
 # fix Ra, find omega
 def compute_growth_rate(kx, Ra, target=0, plot_fastest_mode=False):
-    lo_res = RainyBenardEVP(nz, Ra, tau, kx, γ, α, β, q0, k, relaxation_method=relaxation_method, Legendre=Legendre, erf=erf, bc_type=bc_type, nondim=nondim, dealias=dealias,Lz=1)
-    hi_res = RainyBenardEVP(int(3*nz/2), Ra, tau, kx, γ, α, β, q0, k, relaxation_method=relaxation_method, Legendre=Legendre, erf=erf, bc_type=bc_type, nondim=nondim, dealias=dealias,Lz=1)
+    lo_res = RainyBenardEVP(nz, Ra, tau, kx, γ, α, β, q0, k, relaxation_method=relaxation_method, Legendre=Legendre, erf=erf, bc_type=bc_type, nondim=nondim, dealias=dealias,Lz=1, Taylor=Taylor, theta=theta, twoD=False)
+    hi_res = RainyBenardEVP(int(3*nz/2), Ra, tau, kx, γ, α, β, q0, k, relaxation_method=relaxation_method, Legendre=Legendre, erf=erf, bc_type=bc_type, nondim=nondim, dealias=dealias,Lz=1, Taylor=Taylor, theta=theta, twoD=False)
     for solver in [lo_res, hi_res]:
         if args['--dense']:
             solver.solve(dense=True)
@@ -176,9 +182,9 @@ for Ra in Ras:
     # reset to base target for each Ra loop
     target = float(args['--target'])
     kx = kxs[0]
-    lo_res = RainyBenardEVP(nz, Ra, tau, kx, γ, α, β, q0, k, relaxation_method=relaxation_method, Legendre=Legendre, erf=erf, bc_type=bc_type, nondim=nondim, dealias=dealias,Lz=1)
+    lo_res = RainyBenardEVP(nz, Ra, tau, kx, γ, α, β, q0, k, relaxation_method=relaxation_method, Legendre=Legendre, erf=erf, bc_type=bc_type, nondim=nondim, dealias=dealias,Lz=1, Taylor=Taylor, theta=theta, twoD=False)
     lo_res.plot_background()
-    hi_res = RainyBenardEVP(int(3*nz/2), Ra, tau, kx, γ, α, β, q0, k, relaxation_method=relaxation_method, Legendre=Legendre, erf=erf, bc_type=bc_type, nondim=nondim, dealias=dealias,Lz=1)
+    hi_res = RainyBenardEVP(int(3*nz/2), Ra, tau, kx, γ, α, β, q0, k, relaxation_method=relaxation_method, Legendre=Legendre, erf=erf, bc_type=bc_type, nondim=nondim, dealias=dealias,Lz=1, Taylor=Taylor, theta=theta, twoD=False)
     hi_res.plot_background()
     for system in ['rainy_evp']:
          logging.getLogger(system).setLevel(logging.WARNING)
@@ -231,7 +237,7 @@ for system in ['rainy_evp']:
      logging.getLogger(system).setLevel(logging.WARNING)
 
 import scipy.optimize as sciop
-bounds = sciop.Bounds(lb=1, ub=10)
+bounds = sciop.Bounds(lb=min_kx, ub=max_kx)
 def find_continous_peak(Ra, kx, plot_fastest_mode=False):
 
     result = sciop.minimize(peak_growth_rate, kx, args=(Ra), bounds=bounds, method='Nelder-Mead', tol=1e-5)
@@ -335,3 +341,4 @@ with h5py.File(f_curves,'w') as f:
         f[f'curves/{Ra:.4e}/σ'] = growth_rates[Ra]['σ']
     f.close()
 logger.info("Critical curves written out to: {:}".format(f_curves))
+
